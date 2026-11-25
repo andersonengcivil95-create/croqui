@@ -1,0 +1,1583 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f2f68">
+<meta name="description" content="Croqui de casa com medidas, cotas, portas, janelas, terreno e quadro de áreas.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>body{margin:0;font-size:14px}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+</head>
+<body>
+<title>Croqui de Medidas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="jspdf.umd.min.js"></script>
+<style>
+/* Layout: prancheta azul em tela cheia; barra de topo com arquivo/opções, barra de ferramentas embaixo (alcance do polegar), painel deslizante para editar medida. Tema único "blueprint" por escolha. */
+:root{
+  --paper:#1c4c9e; --paper-deep:#143b7f; --chrome:#0f2f68; --chrome-2:#183f86;
+  --ink:#ffffff; --ink-soft:rgba(255,255,255,.72); --line:rgba(255,255,255,.18);
+  --accent:#ffcf4a; --danger:#ff8a80;
+  --font-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-num:"IBM Plex Mono",ui-monospace,"Roboto Mono",Consolas,monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-ui);overflow:hidden;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--chrome)}
+.app{position:fixed;inset:0;display:flex;flex-direction:column}
+header{background:var(--chrome);display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px;
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));
+  border-bottom:1px solid var(--line)}
+.brand{font-weight:700;letter-spacing:.02em;font-size:15px;display:flex;align-items:center;gap:8px;margin-right:auto}
+.brand small{font-family:var(--font-num);font-weight:500;color:var(--ink-soft);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.stage{position:relative;flex:1;min-height:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+button,select,input{font:inherit;color:inherit}
+.btn{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:var(--chrome-2);cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:rgba(255,255,255,.4)}
+.btn:focus-visible,.tool:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.on{background:var(--ink);color:var(--chrome);border-color:var(--ink)}
+.btn.primary{background:var(--accent);color:#1b2a44;border-color:var(--accent);font-weight:600}
+.btn.danger{color:var(--danger);border-color:rgba(255,138,128,.45)}
+.btn svg,.tool svg{width:18px;height:18px;flex:none}
+.btn:disabled{opacity:.4;cursor:default}
+nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex;gap:4px;align-items:stretch;
+  padding-top:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom,0px));
+  padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
+.tool{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;border-radius:10px;border:0;background:transparent;cursor:pointer;font-size:11px;font-weight:500;color:var(--ink-soft)}
+.tool.on{background:var(--chrome-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
+.tool svg{width:22px;height:22px}
+.sep{width:1px;background:var(--line);margin:6px 2px}
+.hint{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:rgba(15,47,104,.88);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:12.5px;max-width:calc(100% - 32px);text-align:center;pointer-events:none;transition:opacity .3s}
+.scalebar{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:12px;font-family:var(--font-num);font-size:11px;color:var(--ink-soft);pointer-events:none}
+.scalebar i{display:block;height:6px;border:1.5px solid var(--ink);border-top:0;margin-top:3px}
+.zoomctl{position:absolute;right:max(12px,env(safe-area-inset-right,0px));bottom:12px;display:flex;flex-direction:column;gap:6px}
+.zoomctl .btn{width:40px;justify-content:center;padding:0}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--chrome);border-top:1px solid var(--line);border-radius:16px 16px 0 0;
+  padding-block:14px 14px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  box-shadow:0 -10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:12px;max-height:80%;overflow:auto}
+.sheet h3{margin:0;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:center}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.field{display:flex;align-items:center;gap:8px;background:var(--paper-deep);border:1px solid var(--line);border-radius:10px;padding:0 12px;min-height:46px;flex:1;min-width:140px}
+.field input,.field select{background:transparent;border:0;outline:0;flex:1;min-width:0;font-size:18px;padding:8px 0}
+.field select{font-size:15px}
+#optThick option,.field select option{background:var(--chrome);color:var(--ink)}
+.field.num input{font-family:var(--font-num);font-weight:600}
+.field span{color:var(--ink-soft);font-size:14px}
+.check{display:flex;gap:8px;align-items:center;font-size:13.5px;color:var(--ink-soft);cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--accent)}
+.note{font-size:12.5px;color:var(--ink-soft);line-height:1.45;margin:0}
+.x{background:none;border:0;cursor:pointer;color:var(--ink-soft);font-size:22px;line-height:1;padding:4px 8px}
+.toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:var(--ink);color:var(--chrome);font-weight:600;font-size:13px;border-radius:999px;padding:8px 16px;pointer-events:none}
+.hide-sm{display:inline}
+@media (max-width:520px){.tool{font-size:9.5px;min-height:48px}.tool svg{width:20px;height:20px}#undo,#redo{flex:.6}.ulab{display:none}}
+@media (max-width:640px){.tool{font-size:0;gap:0}.tool svg{width:21px;height:21px}}
+.qa{background:var(--paper-deep);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.qa b{font-family:var(--font-num);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.qa span{font-size:11.5px;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase}
+@media (max-width:560px){.hide-sm{display:none}.btn{padding:0 10px}.brand small{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg width="34" height="22" viewBox="-70 -474 187 118" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M38.9329 -471.3195 L-5.0374 -413.3646 L-12.6577 -424.6843 L-68.0000 -358.0706 L114.3261 -358.0706 L38.9329 -471.3195 Z M32.2305 -378.4758 L42.2579 -423.7343 L30.3023 -416.4924 L39.3354 -455.9583 L65.5655 -416.5689 L32.2305 -378.4718 L32.2305 -378.4758 Z"/></svg>
+      Croqui <small>medidas em metros</small>
+    </div>
+    <button class="btn on" id="optOrtho" title="Prender a linha em 0°, 45° e 90°">∠ <span>45/90°</span></button>
+    <label class="btn" title="Espessura das paredes novas">▮ <select id="optThick" aria-label="Espessura da parede" style="background:transparent;border:0;outline:0;font-weight:600">
+      <option value="0.10">10 cm</option><option value="0.12">12 cm</option><option value="0.15" selected>15 cm</option><option value="0.20">20 cm</option></select></label>
+    <button class="btn on" id="optRound" title="Arredondar medidas a cada 5 cm"><span>5 cm</span></button>
+    <button class="btn" id="optDims" title="Mostrar a medida de todas as paredes, mesmo as que você ainda não indicou">⟷ <span class="hide-sm">Todas as cotas</span></button>
+    <button class="btn" id="btnAreas" title="Quadro de áreas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 10v10"/></svg><span class="hide-sm">Áreas</span></button>
+    <button class="btn" id="btnFit" title="Enquadrar o desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="hide-sm">Enquadrar</span></button>
+    <button class="btn" id="btnNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg><span class="hide-sm">Novo</span></button>
+    <button class="btn primary" id="btnExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Salvar</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="cv"></canvas>
+    <div class="hint" id="hint">Risque as paredes à vontade. As medidas você indica depois, em Medida.</div>
+    <div class="scalebar" id="scalebar"><span>1 m</span><i id="scalebarI" style="width:60px"></i></div>
+    <div class="zoomctl">
+      <button class="btn" id="zIn" title="Aproximar" aria-label="Aproximar">+</button>
+      <button class="btn" id="zOut" title="Afastar" aria-label="Afastar">−</button>
+    </div>
+
+    <!-- painel: parede selecionada -->
+    <div class="sheet" id="sheetWall" hidden>
+      <h3><span>Tamanho da parede</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row">
+        <label class="field num"><input id="wallLen" inputmode="decimal" autocomplete="off" aria-label="Medida da parede"><span>m</span></label>
+        <button class="btn primary" id="wallApply">Aplicar medida</button>
+      </div>
+      <div id="wallDistBox" style="display:flex;flex-direction:column;gap:8px">
+        <div class="row" style="justify-content:space-between">
+          <span class="note">Distância até as paredes vizinhas (digite e a parede anda):</span>
+          <span class="row" style="gap:4px" role="group" aria-label="Medir entre">
+            <button class="btn on" id="distAxis" title="Distância entre os eixos (meio das paredes)">Eixo</button>
+            <button class="btn" id="distFace" title="Distância livre, de face a face">Face</button>
+          </span>
+        </div>
+        <div id="wallDist" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+      <div class="row" id="wallThick" role="group" aria-label="Espessura desta parede">
+        <span class="note" style="margin-right:4px">Espessura:</span>
+        <button class="btn" data-t="0.10">10 cm</button><button class="btn" data-t="0.12">12 cm</button><button class="btn" data-t="0.15">15 cm</button><button class="btn" data-t="0.20">20 cm</button>
+        <button class="btn" id="thickAll" title="Aplicar esta espessura em todas as paredes">Usar em todas</button>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="wallStretch" checked> Empurrar o resto da planta junto</label>
+        <button class="btn" id="wallSwap" title="Escolher qual ponta fica parada">⇄ Trocar ponta fixa</button>
+        <button class="btn" id="wallFlip" title="Mudar a cota de lado">Cota do outro lado</button>
+        <button class="btn" id="wallHideDim" title="Tirar a cota desta parede">Tirar cota</button>
+        <button class="btn danger" id="wallDel">Apagar parede</button>
+      </div>
+      <p class="note">Enter já seleciona a próxima parede. O quadradinho amarelo marca a ponta que fica parada.</p>
+    </div>
+
+    <!-- painel: texto -->
+    <div class="sheet" id="sheetText" hidden>
+      <h3><span id="textTitle">Nome do cômodo</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row">
+        <label class="field"><input id="textVal" autocomplete="off" placeholder="Ex.: Sala, Quarto 1, Varanda" aria-label="Texto"></label>
+        <button class="btn primary" id="textOk">OK</button>
+        <button class="btn danger" id="textDel" hidden>Apagar</button>
+      </div>
+    </div>
+
+    <!-- painel: salvar / exportar -->
+    <div class="sheet" id="sheetExport" hidden>
+      <h3><span>Salvar e exportar</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row">
+        <label class="field"><input id="expTitle" autocomplete="off" placeholder="Título (ex.: Casa Rua Tal, 123)" aria-label="Título do croqui"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Escala do PDF</span>
+          <select id="expScale">
+            <option value="auto">Ajustar à folha</option>
+            <option value="25">1:25</option><option value="50">1:50</option><option value="75">1:75</option>
+            <option value="100">1:100</option><option value="125">1:125</option><option value="200">1:200</option>
+          </select></label>
+        <label class="field"><span>Fundo da imagem</span>
+          <select id="expBg"><option value="blue">Azul</option><option value="white">Branco</option></select></label>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="expPdf">PDF em escala</button>
+        <button class="btn" id="expPng">Imagem PNG</button>
+        <button class="btn" id="expDxf" title="Arquivo DXF dentro de um .zip, para abrir no AutoCAD">DXF (AutoCAD)</button>
+        <button class="btn" id="expRevit" title="Paredes, portas e janelas para montar no Revit">Para o Revit</button>
+        <button class="btn" id="expJson">Salvar projeto</button>
+        <button class="btn" id="expOpen">Abrir projeto</button>
+        <input type="file" id="fileOpen" accept=".json,application/json" hidden>
+      </div>
+      <p class="note" id="expMsg">O PDF sai em folha A4 ou A3 com fundo branco, pronto para imprimir na escala escolhida. "Salvar projeto" guarda um arquivo para continuar editando depois.</p>
+    </div>
+
+    <!-- painel: confirmar novo -->
+    <!-- painel: porta / janela -->
+    <div class="sheet" id="sheetOpen" hidden>
+      <h3><span id="openTitle">Porta</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row" id="openSizes" role="group" aria-label="Largura"></div>
+      <div class="row">
+        <label class="field num" style="max-width:220px"><input id="openW" inputmode="decimal" autocomplete="off" aria-label="Largura"><span>m</span></label>
+        <button class="btn primary" id="openApply">Aplicar largura</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="openHinge" title="Trocar o lado da dobradiça">⇄ Trocar dobradiça</button>
+        <button class="btn" id="openSide" title="Abrir para dentro ou para fora">↕ Abrir para o outro lado</button>
+        <button class="btn danger" id="openDel">Apagar</button>
+      </div>
+      <p class="note" id="openNote">Arraste a porta ao longo da parede com a ferramenta Medir.</p>
+    </div>
+
+    <!-- painel: terreno -->
+    <div class="sheet" id="sheetLot" hidden>
+      <h3><span>Terreno</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row" id="lotSideRow" hidden>
+        <span class="note" id="lotSideName" style="min-width:110px">Lado</span>
+        <label class="field num" style="max-width:200px"><input id="lotLen" inputmode="decimal" autocomplete="off" aria-label="Medida do lado"><span>m</span></label>
+        <button class="btn primary" id="lotApply">Aplicar medida</button>
+        <button class="btn" id="lotFront">Este lado é a frente</button>
+      </div>
+      <div class="row">
+        <span class="note">Retângulo rápido:</span>
+        <label class="field num" style="max-width:150px"><span>Frente</span><input id="lotW" inputmode="decimal" autocomplete="off" aria-label="Frente do terreno"><span>m</span></label>
+        <label class="field num" style="max-width:150px"><span>Fundo</span><input id="lotD" inputmode="decimal" autocomplete="off" aria-label="Profundidade do terreno"><span>m</span></label>
+        <button class="btn" id="lotRect">Criar terreno</button>
+        <button class="btn danger" id="lotDel">Apagar terreno</button>
+      </div>
+      <p class="note">Desenhe o contorno do terreno com o dedo ou crie pelo retângulo. Toque num lado para digitar a medida da matrícula. Arraste por dentro para mover o terreno.</p>
+    </div>
+
+    <!-- painel: quadro de áreas -->
+    <div class="sheet" id="sheetAreas" hidden>
+      <h3><span>Quadro de áreas</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div id="areasBody" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px"></div>
+      <p class="note" id="areasNote"></p>
+    </div>
+
+    <div class="sheet" id="sheetNew" hidden>
+      <h3><span>Começar um croqui novo?</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <p class="note">O desenho atual será apagado da tela. Se quiser guardar, use "Salvar projeto" antes.</p>
+      <div class="row"><button class="btn danger" id="newYes">Apagar e começar</button><button class="btn" data-close>Cancelar</button></div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+  </div>
+
+  <nav class="tools" aria-label="Ferramentas">
+    <button class="tool on" data-tool="draw" title="Desenhar parede (L)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21l3.5-1 12-12-2.5-2.5-12 12z"/><path d="M14 6l2.5 2.5"/></svg>Parede</button>
+    <button class="tool" data-tool="select" title="Indicar medida (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8v8M21 8v8M3 12h18M7 10l-4 2 4 2M17 10l4 2-4 2"/></svg>Medida</button>
+    <button class="tool" data-tool="ink" title="Pincel: escrever à mão (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.5 2.5l3 3L10 17l-4 1 1-4z"/><path d="M3 21c2-1 3-3 2-4"/></svg>Pincel</button>
+    <button class="tool" data-tool="text" title="Nome do cômodo (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5h14M12 5v14M9 19h6"/></svg>Texto</button>
+    <button class="tool" data-tool="door" title="Porta (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h4M17 21h4M7 21V7"/><path d="M7 7a14 14 0 0 1 10 14" stroke-dasharray="2 2.5"/></svg>Porta</button>
+    <button class="tool" data-tool="window" title="Janela (J)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4M18 12h4M6 9v6M18 9v6M6 10.5h12M6 13.5h12"/></svg>Janela</button>
+    <button class="tool" data-tool="lot" title="Terreno (G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l18-2v16l-18 1z" stroke-dasharray="4 2 1 2"/></svg>Terreno</button>
+    <button class="tool" data-tool="fillet" title="Fillet: une duas paredes num canto (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V9a5 5 0 0 1 5-5h11"/><path d="M4 4v3M4 4h3" stroke-dasharray="1.5 2"/></svg>Fillet</button>
+    <button class="tool" data-tool="erase" title="Apagar (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H8l-5-5L14 4l7 7-6 6"/><path d="M7 11l6 6"/></svg>Apagar</button>
+    <button class="tool" data-tool="pan" title="Mover a tela (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg>Mover</button>
+    <div class="sep"></div>
+    <button class="tool" id="undo" title="Desfazer (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg><span class="ulab">Desfazer</span></button>
+    <button class="tool" id="redo" title="Refazer (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg><span class="ulab">Refazer</span></button>
+  </nav>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const cv = $("cv"), stage = $("stage");
+let ctx = cv.getContext("2d");
+const STORE = "croqui-anderson-v1";
+
+/* ---------- estado ---------- */
+let S = { walls: [], texts: [], openings: [], inks: [], lot: null, title: "" };
+let uid = 1;
+const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
+const view = { k: 50, ox: 0, oy: 0 };          // tela = mundo(m) * k + o
+const opt = { ortho: true, round: true, thick: 0.15, allDims: false };
+const showDim = w => opt.allDims || !!w.dim;
+const TH = w => (w && w.t) || 0.15;
+const wpx = t => Math.max(2, t * view.k);
+let tool = "draw", sel = null;                  // sel: {type:'wall'|'text', id}
+const hist = [], redoStack = [];
+
+const EXAMPLE = () => {
+  const W = (ax, ay, bx, by, t = 0.15) => ({ id: nid(), a: { x: ax, y: ay }, b: { x: bx, y: by }, t });
+  const ex = {
+    title: "Exemplo",
+    openings: [],
+    walls: [W(0,0,10,0), W(10,0,10,8), W(10,8,0,8), W(0,8,0,0), W(4,0,4,8,0.12), W(4,4.5,10,4.5,0.12), W(7,4.5,7,8,0.10)],
+    texts: [
+      { id: nid(), x: 2, y: 4, s: "SALA" }, { id: nid(), x: 7, y: 2.25, s: "COZINHA" },
+      { id: nid(), x: 5.5, y: 6.25, s: "QUARTO 1" }, { id: nid(), x: 8.5, y: 6.25, s: "BANHO" },
+    ],
+  };
+  [0, 1, 4, 5, 6].forEach(i => ex.walls[i].dim = true);
+  const O = (wi, pos, w, kind, side) => ({ id: nid(), wall: ex.walls[wi].id, pos, w, kind, side: !!side, hinge: false });
+  ex.openings = [O(0, 2, 1.5, "window"), O(0, 7, 1.2, "window"), O(2, 8, 1.0, "window"), O(3, 6, 0.9, "door"), O(4, 6, 0.8, "door"), O(4, 2.25, 0.8, "door"), O(5, 1.0, 0.8, "door", true), O(6, 1.2, 0.6, "door")];
+  ex.inks = [];
+  ex.lot = { pts: [{ x: -1.5, y: -5 }, { x: 11.5, y: -5 }, { x: 11.5, y: 13 }, { x: -1.5, y: 13 }], front: 2 };
+  return ex;
+};
+
+function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
+function load() {
+  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
+  return null;
+}
+function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
+function undo() { if (!hist.length) return; redoStack.push(JSON.stringify(S)); S = JSON.parse(hist.pop()); closeSheets(); after(); }
+function redo() { if (!redoStack.length) return; hist.push(JSON.stringify(S)); S = JSON.parse(redoStack.pop()); closeSheets(); after(); }
+function updUndo() { $("undo").disabled = !hist.length; $("redo").disabled = !redoStack.length; }
+function after() { save(); updUndo(); draw(); }
+
+/* ---------- geometria ---------- */
+const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+const mul = (a, s) => ({ x: a.x * s, y: a.y * s });
+const dot = (a, b) => a.x * b.x + a.y * b.y;
+const len = a => Math.hypot(a.x, a.y);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const toS = p => ({ x: p.x * view.k + view.ox, y: p.y * view.k + view.oy });
+const toW = p => ({ x: (p.x - view.ox) / view.k, y: (p.y - view.oy) / view.k });
+const r5 = v => Math.round(v / 0.05) * 0.05;
+const clean = v => Math.round(v * 1000) / 1000;
+function segDist(p, a, b) {
+  const ab = sub(b, a), t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / (dot(ab, ab) || 1)));
+  return { d: dist(p, add(a, mul(ab, t))), t, q: add(a, mul(ab, t)) };
+}
+function fmt(m) { return m.toFixed(2).replace(".", ","); }
+function parseLen(s) {
+  s = String(s).trim().replace(/\s/g, "").replace(",", ".").replace(/m$/i, "");
+  let v = parseFloat(s); if (!isFinite(v) || v <= 0) return null;
+  if (v > 100) v = v / 100; // digitou em cm
+  return v;
+}
+function rdp(pts, eps) {
+  if (pts.length < 3) return pts.slice();
+  let dmax = 0, idx = 0; const a = pts[0], b = pts[pts.length - 1];
+  for (let i = 1; i < pts.length - 1; i++) { const d = segDist(pts[i], a, b).d; if (d > dmax) { dmax = d; idx = i; } }
+  if (dmax > eps) { const l = rdp(pts.slice(0, idx + 1), eps), r = rdp(pts.slice(idx), eps); return l.slice(0, -1).concat(r); }
+  return [a, b];
+}
+function endpoints(extra) {
+  const out = [];
+  for (const w of S.walls) { out.push(w.a, w.b); }
+  if (extra) out.push(...extra);
+  return out;
+}
+
+/* Transforma o traço à mão em paredes retas, com ímã nos pontos e no esquadro */
+function straighten(rawS) {
+  if (rawS.length < 2) return [];
+  let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, plen = 0;
+  for (let i = 0; i < rawS.length; i++) {
+    const p = rawS[i]; minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y);
+    if (i) plen += dist(p, rawS[i - 1]);
+  }
+  if (plen < 14) return [];
+  const diag = Math.hypot(maxx - minx, maxy - miny);
+  const vs = rdp(rawS, Math.max(12, diag * 0.07)).map(toW);
+  const tol = 18 / view.k, minL = Math.max(0.1, 10 / view.k);
+  const out = [];
+  // primeiro ponto
+  out.push(magnetFree(vs[0], tol, []));
+  for (let i = 1; i < vs.length; i++) {
+    const prev = out[out.length - 1], raw = vs[i];
+    let ang = Math.atan2(raw.y - prev.y, raw.x - prev.x);
+    if (opt.ortho) ang = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+    const d = { x: Math.cos(ang), y: Math.sin(ang) };
+    if (Math.abs(d.x) < 1e-9) d.x = 0; if (Math.abs(d.y) < 1e-9) d.y = 0;
+    let L = opt.ortho ? dot(sub(raw, prev), d) : dist(raw, prev);
+    if (L < minL) continue;
+    let cand = add(prev, mul(d, L));
+    const pool = endpoints(out.slice(0, -1));
+    // 1) ímã num ponto existente
+    let best = null, bd = tol;
+    for (const p of pool) { const dd = dist(p, cand); if (dd < bd) { bd = dd; best = p; } }
+    if (best) cand = { x: best.x, y: best.y };
+    else {
+      // 2) encontra uma parede existente no caminho
+      let hit = null, hd = tol;
+      for (const w of S.walls) {
+        const q = rayHit(prev, d, w.a, w.b);
+        if (q && dist(q, cand) < hd && dist(q, prev) > minL) { hd = dist(q, cand); hit = q; }
+      }
+      if (hit) cand = hit;
+      else {
+        // 3) alinha com pontos existentes (esquadro) ou arredonda
+        let aligned = false;
+        if (d.y === 0 || d.x === 0) {
+          const axis = d.y === 0 ? "x" : "y"; let ad = tol, av = null;
+          for (const p of pool) { const dd = Math.abs(p[axis] - cand[axis]); if (dd < ad) { ad = dd; av = p[axis]; } }
+          if (av !== null) { cand = { ...cand, [axis]: av }; aligned = true; }
+        }
+        if (!aligned && opt.round) cand = add(prev, mul(d, Math.max(0.05, r5(L))));
+      }
+    }
+    cand = { x: clean(cand.x), y: clean(cand.y) };
+    if (dist(cand, prev) < 0.02) continue;
+    out.push(cand);
+  }
+  // junta trechos colineares
+  for (let i = out.length - 2; i >= 1; i--) {
+    const u = sub(out[i], out[i - 1]), v = sub(out[i + 1], out[i]);
+    if (Math.abs(u.x * v.y - u.y * v.x) < 1e-6 * len(u) * len(v) + 1e-9 && dot(u, v) > 0) out.splice(i, 1);
+  }
+  return out.length >= 2 ? out : [];
+}
+function magnetFree(p, tol, extra) {
+  let best = null, bd = tol;
+  for (const q of endpoints(extra)) { const d = dist(p, q); if (d < bd) { bd = d; best = q; } }
+  if (best) return { x: best.x, y: best.y };
+  let hw = null, hd = tol;
+  for (const w of S.walls) { const r = segDist(p, w.a, w.b); if (r.d < hd) { hd = r.d; hw = { q: r.q, w }; } }
+  if (hw) {
+    if (opt.round && hw.w.a.y === hw.w.b.y) hw.q = { x: r5(hw.q.x), y: hw.q.y };
+    else if (opt.round && hw.w.a.x === hw.w.b.x) hw.q = { x: hw.q.x, y: r5(hw.q.y) };
+    return { x: clean(hw.q.x), y: clean(hw.q.y) };
+  }
+  return opt.round ? { x: clean(r5(p.x)), y: clean(r5(p.y)) } : p;
+}
+function rayHit(o, d, a, b) {
+  const e = sub(b, a), den = d.x * e.y - d.y * e.x;
+  if (Math.abs(den) < 1e-9) return null;
+  const ao = sub(a, o), t = (ao.x * e.y - ao.y * e.x) / den, u = (ao.x * d.y - ao.y * d.x) / den;
+  if (t <= 0 || u < -1e-6 || u > 1 + 1e-6) return null;
+  return add(o, mul(d, t));
+}
+
+/* ---------- cotas: lado de fora do desenho ---------- */
+function centroid() {
+  let x = 0, y = 0, n = 0; for (const w of S.walls) { x += w.a.x + w.b.x; y += w.a.y + w.b.y; n += 2; }
+  return n ? { x: x / n, y: y / n } : { x: 0, y: 0 };
+}
+function dimInfo(w, c) {
+  const v = sub(w.b, w.a), L = len(v) || 1, u = mul(v, 1 / L);
+  let n = { x: -u.y, y: u.x };
+  const mid = mul(add(w.a, w.b), 0.5);
+  if (dot(sub(mid, c), n) < 0) n = mul(n, -1);
+  if (w.flip) n = mul(n, -1);
+  let ang = Math.atan2(u.y, u.x);
+  if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+  return { L, u, n, mid, ang };
+}
+
+/* ---------- portas e janelas ---------- */
+const OPEN_SIZES = { door: [0.6, 0.7, 0.8, 0.9, 1.0], window: [0.6, 1.0, 1.2, 1.5, 2.0] };
+function openGeom(o) {
+  const w = S.walls.find(x => x.id === o.wall); if (!w) return null;
+  const L = dist(w.a, w.b); if (L < 0.05) return null;
+  const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x };
+  const ow = Math.min(o.w, L), half = ow / 2, c = Math.max(half, Math.min(L - half, o.pos));
+  const p1 = add(w.a, mul(u, c - half)), p2 = add(w.a, mul(u, c + half));
+  const hinge = o.hinge ? p2 : p1, other = o.hinge ? p1 : p2, side = o.side ? mul(n, -1) : n;
+  return { w, L, u, n, c, ow, p1, p2, hinge, other, side, leaf: add(hinge, mul(side, ow)), t: TH(w) };
+}
+function arcPts(g, steps = 14) {
+  const a0 = Math.atan2(g.side.y, g.side.x), a1v = sub(g.other, g.hinge), a1 = Math.atan2(a1v.y, a1v.x);
+  let d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+  const out = []; for (let i = 0; i <= steps; i++) { const a = a0 + d * i / steps; out.push(add(g.hinge, mul({ x: Math.cos(a), y: Math.sin(a) }, g.ow))); }
+  return out;
+}
+function drawOpenings() {
+  for (const o of S.openings) {
+    const g = openGeom(o); if (!g) continue;
+    const isSel = sel && sel.type === "open" && sel.id === o.id, col = isSel ? COL.acc : COL.wall;
+    const p1 = toS(g.p1), p2 = toS(g.p2), tw = wpx(g.t);
+    // abre o vão na parede
+    ctx.lineCap = "butt"; ctx.strokeStyle = COL.bg; ctx.lineWidth = tw + 2;
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    const nS = g.n, hj = tw / 2 + 1;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (const q of [p1, p2]) { ctx.moveTo(q.x - nS.x * hj, q.y - nS.y * hj); ctx.lineTo(q.x + nS.x * hj, q.y + nS.y * hj); }
+    ctx.stroke();
+    if (o.kind === "window") {
+      ctx.lineWidth = 1.4; ctx.beginPath();
+      for (const f of [-0.5, 0, 0.5]) { const off = f * tw * 0.7; ctx.moveTo(p1.x + nS.x * off, p1.y + nS.y * off); ctx.lineTo(p2.x + nS.x * off, p2.y + nS.y * off); }
+      ctx.stroke();
+    } else {
+      const h = toS(g.hinge), lf = toS(g.leaf);
+      ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(lf.x, lf.y); ctx.stroke();
+      ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.beginPath();
+      arcPts(g).forEach((q, i) => { const s2 = toS(q); i ? ctx.lineTo(s2.x, s2.y) : ctx.moveTo(s2.x, s2.y); }); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // largura
+    if (view.k * g.ow > 34) {
+      const m = toS(add(g.w.a, mul(g.u, g.c))), back = o.kind === "door" ? mul(g.side, -1) : g.n;
+      const tp = { x: m.x + back.x * (tw / 2 + 9), y: m.y + back.y * (tw / 2 + 9) };
+      let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+      ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang);
+      ctx.font = "500 10.5px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.fillText((o.kind === "door" ? "P " : "J ") + fmt(g.ow), 0, 0); ctx.restore();
+    }
+  }
+  ctx.lineCap = "square";
+}
+function hitOpen(sp) {
+  let best = null, bd = 14;
+  for (const o of S.openings) { const g = openGeom(o); if (!g) continue; const r = segDist(sp, toS(g.p1), toS(g.p2)); if (r.d < bd) { bd = r.d; best = o; } }
+  return best;
+}
+function placeOpening(kind, sp) {
+  const w = hitWall(sp, 22);
+  if (!w) { toast("Toque em cima de uma parede para colocar a " + (kind === "door" ? "porta" : "janela")); return; }
+  const L = dist(w.a, w.b), u = mul(sub(w.b, w.a), 1 / (L || 1));
+  const def = kind === "door" ? 0.8 : 1.2, ow = Math.min(def, L);
+  let pos = dot(sub(toW(sp), w.a), u); if (opt.round) pos = r5(pos);
+  pos = Math.max(ow / 2, Math.min(L - ow / 2, pos));
+  snapshot();
+  const o = { id: nid(), wall: w.id, pos: clean(pos), w: ow, kind, side: false, hinge: false };
+  // porta abre para dentro do desenho
+  if (kind === "door") { S.openings.push(o); const g2 = openGeom(o); if (g2 && dot(sub(centroid(), add(w.a, mul(u, pos))), g2.side) < 0) o.side = true; }
+  else S.openings.push(o);
+  after(); openOpening(o);
+}
+function curOpen() { return sel && sel.type === "open" ? S.openings.find(o => o.id === sel.id) : null; }
+function openOpening(o) {
+  closeSheets(); sel = { type: "open", id: o.id };
+  const door = o.kind === "door";
+  $("openTitle").textContent = door ? "Porta" : "Janela";
+  $("openHinge").hidden = !door; $("openSide").hidden = !door;
+  $("openNote").textContent = (door ? "Arraste a porta" : "Arraste a janela") + " ao longo da parede com a ferramenta Medir.";
+  const box = $("openSizes"); box.textContent = "";
+  const lab = document.createElement("span"); lab.className = "note"; lab.textContent = "Largura:"; box.appendChild(lab);
+  for (const v of OPEN_SIZES[o.kind]) {
+    const b = document.createElement("button"); b.className = "btn" + (Math.abs(v - o.w) < 1e-6 ? " on" : ""); b.textContent = fmt(v);
+    b.onclick = () => setOpenW(v); box.appendChild(b);
+  }
+  $("openW").value = fmt(o.w); $("sheetOpen").hidden = false; draw();
+}
+function setOpenW(v) {
+  const o = curOpen(); if (!o) return; const g = openGeom(o);
+  if (g && v > g.L) { toast("A largura passa do tamanho da parede (" + fmt(g.L) + " m)"); return; }
+  snapshot(); o.w = clean(v); after(); openOpening(o);
+}
+
+/* ---------- distâncias entre paredes (estilo Revit) ---------- */
+opt.face = false;
+function neighbors(w) {
+  const L = dist(w.a, w.b); if (L < 0.05) return [];
+  const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x };
+  const w0 = 0, w1 = L;
+  let pos = null, neg = null, posAny = null, negAny = null;
+  for (const x of S.walls) {
+    if (x === w) continue;
+    const lx = dist(x.a, x.b); if (lx < 0.05) continue;
+    const ux = mul(sub(x.b, x.a), 1 / lx);
+    if (Math.abs(u.x * ux.y - u.y * ux.x) > 1e-3) continue; // não é paralela
+    const d = dot(sub(x.a, w.a), n); if (Math.abs(d) < 0.01) continue;
+    const s0 = dot(sub(x.a, w.a), u), s1 = dot(sub(x.b, w.a), u);
+    const lo = Math.max(w0, Math.min(s0, s1)), hi = Math.min(w1, Math.max(s0, s1));
+    const cand = { x, d, ov: hi > lo + 0.01 ? (lo + hi) / 2 : null, s: (Math.min(s0, s1) + Math.max(s0, s1)) / 2 };
+    if (d > 0) { if (cand.ov !== null) { if (!pos || d < pos.d) pos = cand; } else if (!posAny || d < posAny.d) posAny = cand; }
+    else { if (cand.ov !== null) { if (!neg || d > neg.d) neg = cand; } else if (!negAny || d > negAny.d) negAny = cand; }
+  }
+  const out = [];
+  for (const c of [pos || posAny, neg || negAny]) if (c) {
+    const along = c.ov !== null ? c.ov : Math.max(w0, Math.min(w1, c.s));
+    const gap = Math.abs(c.d) - (opt.face ? (TH(w) + TH(c.x)) / 2 : 0);
+    out.push({ ...c, u, n, along, gap, side: sideName(mul(n, Math.sign(c.d))) });
+  }
+  return out;
+}
+function sideName(v) { return Math.abs(v.y) >= Math.abs(v.x) ? (v.y < 0 ? "de cima" : "de baixo") : (v.x < 0 ? "da esquerda" : "da direita"); }
+function moveWall(w, m, n) {
+  if (Math.abs(m) < 1e-6) return;
+  const a0 = { ...w.a }, b0 = { ...w.b }, mv = mul(n, m);
+  for (const x of S.walls) for (const e of ["a", "b"]) if (x === w || segDist(x[e], a0, b0).d < 1e-3) { x[e].x = clean(x[e].x + mv.x); x[e].y = clean(x[e].y + mv.y); }
+}
+function renderDistRows(w) {
+  const box = $("wallDist"); box.textContent = "";
+  const nb = neighbors(w);
+  $("wallDistBox").hidden = !nb.length;
+  nb.forEach((c, i) => {
+    const row = document.createElement("div"); row.className = "row";
+    const lab = document.createElement("span"); lab.className = "note"; lab.style.minWidth = "150px"; lab.textContent = "Até a parede " + c.side;
+    const f = document.createElement("label"); f.className = "field num"; f.style.maxWidth = "200px";
+    const inp = document.createElement("input"); inp.id = "dist" + i; inp.inputMode = "decimal"; inp.autocomplete = "off"; inp.value = fmt(c.gap); inp.setAttribute("aria-label", lab.textContent);
+    const un = document.createElement("span"); un.textContent = "m"; f.append(inp, un);
+    const bt = document.createElement("button"); bt.className = "btn"; bt.textContent = "Mover parede";
+    const go = () => {
+      const v = parseLen(inp.value); if (v === null) { toast("Digite a distância em metros, ex.: 3,00"); return; }
+      const want = v + (opt.face ? (TH(w) + TH(c.x)) / 2 : 0);
+      const m = c.d - Math.sign(c.d) * want;
+      snapshot(); moveWall(w, m, c.n); dropZero(); after(); selectWall(w); toast("Parede movida");
+    };
+    bt.onclick = go; inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    row.append(lab, f, bt); box.appendChild(row);
+  });
+}
+function drawNeighborDims() {
+  if (!sel || sel.type !== "wall" || tool !== "select") return;
+  const w = S.walls.find(x => x.id === sel.id); if (!w) return;
+  for (const c of neighbors(w)) {
+    const p0 = add(w.a, mul(c.u, c.along)), p1 = add(p0, mul(c.n, c.d));
+    let A = toS(p0), B = toS(p1);
+    if (opt.face) { const k1 = TH(w) / 2 * view.k * Math.sign(c.d), k2 = TH(c.x) / 2 * view.k * Math.sign(c.d); A = { x: A.x + c.n.x * k1, y: A.y + c.n.y * k1 }; B = { x: B.x - c.n.x * k2, y: B.y - c.n.y * k2 }; }
+    ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.setLineDash([]);
+    const t = { x: (c.n.x + c.u.x) * 4, y: (c.n.y + c.u.y) * 4 };
+    ctx.beginPath(); for (const q of [A, B]) { ctx.moveTo(q.x - t.x, q.y - t.y); ctx.lineTo(q.x + t.x, q.y + t.y); } ctx.stroke();
+    const m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, label = fmt(c.gap);
+    ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = COL.acc; ctx.fillRect(m.x - tw / 2 - 5, m.y - 9, tw + 10, 18);
+    ctx.fillStyle = "#1b2a44"; ctx.fillText(label, m.x, m.y);
+  }
+}
+
+/* ---------- pincel ---------- */
+let inkCur = null;
+const INK_W = 0.03;
+function inkPath(pts) {
+  ctx.beginPath();
+  pts.forEach((q, i) => { const s2 = toS({ x: q[0], y: q[1] }); i ? ctx.lineTo(s2.x, s2.y) : ctx.moveTo(s2.x, s2.y); });
+  if (pts.length === 1) { const s2 = toS({ x: pts[0][0], y: pts[0][1] }); ctx.lineTo(s2.x + 0.1, s2.y); }
+}
+function drawInks() {
+  ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = Math.max(1.6, INK_W * view.k);
+  for (const k of S.inks) { ctx.strokeStyle = k.c === "y" ? COL.acc : COL.wall; inkPath(k.pts); ctx.stroke(); }
+  if (inkCur) { ctx.strokeStyle = inkCur.c === "y" ? COL.acc : COL.wall; inkPath(inkCur.pts); ctx.stroke(); }
+  ctx.lineCap = "square"; ctx.lineJoin = "miter";
+}
+function hitInk(sp) {
+  for (let j = S.inks.length - 1; j >= 0; j--) {
+    const pts = S.inks[j].pts;
+    for (let i = 0; i < pts.length; i++) {
+      const a = toS({ x: pts[i][0], y: pts[i][1] }), b = i + 1 < pts.length ? toS({ x: pts[i + 1][0], y: pts[i + 1][1] }) : a;
+      if (segDist(sp, a, b).d < 12) return S.inks[j];
+    }
+  } return null;
+}
+opt.inkColor = "w";
+
+/* ---------- fillet (raio zero, como no CAD) ---------- */
+let fil1 = null; // {w, tap}
+function filletPick(sp) {
+  const w = hitWall(sp, 18);
+  if (!w) { toast("Toque em cima de uma parede"); return; }
+  const tap = toW(sp);
+  if (!fil1 || !S.walls.includes(fil1.w)) { fil1 = { w, tap }; sel = { type: "wall", id: w.id }; showHint("Agora toque na segunda parede."); draw(); return; }
+  if (w === fil1.w) { fil1 = null; sel = null; draw(); return; }
+  const A = fil1.w, B = w, ta = fil1.tap;
+  const d1 = sub(A.b, A.a), d2 = sub(B.b, B.a), den = d1.x * d2.y - d1.y * d2.x;
+  fil1 = null; sel = null;
+  if (Math.abs(den) < 1e-9) { toast("As paredes são paralelas, não dá para unir"); draw(); return; }
+  const ao = sub(B.a, A.a), t1 = (ao.x * d2.y - ao.y * d2.x) / den;
+  const I = { x: clean(A.a.x + d1.x * t1), y: clean(A.a.y + d1.y * t1) };
+  snapshot();
+  for (const [W, tp] of [[A, ta], [B, tap]]) {
+    const d = sub(W.b, W.a), dd = dot(d, d) || 1;
+    const ti = dot(sub(I, W.a), d) / dd, tt = dot(sub(tp, W.a), d) / dd;
+    const end = tt < ti ? "b" : "a";
+    W[end].x = I.x; W[end].y = I.y;
+  }
+  dropZero(); after(); toast("Canto unido");
+}
+
+/* ---------- terreno ---------- */
+let lotSel = null; // índice do lado selecionado
+function lotSide(i) { const P = S.lot.pts, n = P.length; return [P[i], P[(i + 1) % n]]; }
+function lotCentroid() { const P = S.lot.pts; return mul(P.reduce((a, q) => add(a, q), { x: 0, y: 0 }), 1 / P.length); }
+function lotOutward(i) {
+  const [a, b] = lotSide(i), u = mul(sub(b, a), 1 / (dist(a, b) || 1)); let n = { x: -u.y, y: u.x };
+  if (dot(sub(mul(add(a, b), .5), lotCentroid()), n) < 0) n = mul(n, -1); return { u, n };
+}
+function defaultFront() { let bi = 0, by = -1e9; S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i), my = (a.y + b.y) / 2; if (my > by) { by = my; bi = i; } }); return bi; }
+function sideRole(i) {
+  const f = S.lot.front ?? defaultFront();
+  if (i === f) return "Frente";
+  const uf = lotOutward(f).u, ui = lotOutward(i).u;
+  if (Math.abs(uf.x * ui.y - uf.y * ui.x) < 0.17) return "Fundo";
+  const ni = lotOutward(i).n, nf = lotOutward(f).n;
+  // olhando da rua para o lote: esquerda/direita
+  const cr = nf.x * ni.y - nf.y * ni.x;
+  return cr < 0 ? "Lateral direita" : "Lateral esquerda";
+}
+function drawLot() {
+  if (!S.lot) return;
+  const P = S.lot.pts.map(toS), n = P.length;
+  ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.6; ctx.setLineDash([14, 4, 2, 4]); ctx.lineCap = "butt";
+  ctx.beginPath(); P.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+  for (let i = 0; i < n; i++) {
+    const [a, b] = lotSide(i), { u, n: no } = lotOutward(i), L = dist(a, b);
+    const isSel = tool === "lot" && lotSel === i;
+    if (isSel) { const A = toS(a), B = toS(b); ctx.strokeStyle = COL.acc; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); }
+    const m = toS(mul(add(a, b), .5)), tp = { x: m.x + no.x * 14, y: m.y + no.y * 14 };
+    let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+    ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const role = sideRole(i), lab = fmt(L) + (role === "Frente" ? "  ·  FRENTE" : "");
+    ctx.font = "600 11.5px 'IBM Plex Mono', monospace"; ctx.fillStyle = isSel ? COL.acc : "rgba(255,255,255,.9)"; ctx.fillText(lab, 0, 0); ctx.restore();
+  }
+  ctx.lineCap = "square";
+}
+function hitLotSide(sp) {
+  if (!S.lot) return -1; let bi = -1, bd = 16;
+  S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i), r = segDist(sp, toS(a), toS(b)); if (r.d < bd) { bd = r.d; bi = i; } });
+  return bi;
+}
+function openLot(i) {
+  closeSheets(); lotSel = (i ?? -1) >= 0 ? i : null;
+  $("lotSideRow").hidden = lotSel === null;
+  if (lotSel !== null) { const [a, b] = lotSide(lotSel); $("lotSideName").textContent = sideRole(lotSel); $("lotLen").value = fmt(dist(a, b)); }
+  $("lotDel").hidden = !S.lot; $("sheetLot").hidden = false; draw();
+  if (lotSel !== null && matchMedia("(pointer:fine)").matches) setTimeout(() => { $("lotLen").focus(); $("lotLen").select(); }, 30);
+}
+function lotApply() {
+  if (!S.lot || lotSel === null) return; const v = parseLen($("lotLen").value); if (!v) { toast("Digite a medida em metros"); return; }
+  const [a, b] = lotSide(lotSel), L = dist(a, b); if (L < 1e-6) return;
+  const u = mul(sub(b, a), 1 / L), d = v - L, fixed = { ...a };
+  snapshot();
+  for (const q of S.lot.pts) if (dot(sub(q, fixed), u) >= L - 0.005) { q.x = clean(q.x + u.x * d); q.y = clean(q.y + u.y * d); }
+  after(); toast("Lado com " + fmt(v) + " m");
+  openLot((lotSel + 1) % S.lot.pts.length);
+}
+function lotFromStroke(raw) {
+  const pts = straighten(raw);
+  if (pts.length < 3) { toast("Desenhe o contorno inteiro do terreno ou use o retângulo rápido"); return; }
+  if (dist(pts[0], pts[pts.length - 1]) < 0.3 || pts.length > 3) { if (dist(pts[0], pts[pts.length - 1]) < 0.3) pts.pop(); }
+  if (pts.length < 3) return;
+  snapshot(); S.lot = { pts: pts.map(q => ({ x: q.x, y: q.y })) }; S.lot.front = defaultFront(); after(); openLot(null);
+}
+
+/* ---------- quadro de áreas ---------- */
+function areasCalc() {
+  const r = { terreno: 0, construida: 0, util: 0, ocupacao: null, recuos: [] };
+  if (S.lot) r.terreno = Math.abs(polyArea(S.lot.pts));
+  const fl = facesList();
+  if (fl.length) {
+    const big = fl.reduce((m, f) => f.A > m.A ? f : m, fl[0]);
+    const ts = S.walls.map(TH), h = (ts.length ? Math.max(...ts) : 0.15) / 2;
+    r.construida = big.A + polyPerim(big.poly) * h + 4 * h * h;
+    r.outer = big.poly; r.h = h;
+  }
+  for (const t of S.texts) r.util += areaOf(t);
+  if (r.terreno > 0 && r.construida > 0) r.ocupacao = r.construida / r.terreno;
+  if (S.lot && S.walls.length) {
+    S.lot.pts.forEach((_, i) => {
+      const [a, b] = lotSide(i), { n } = lotOutward(i);
+      let best = 1e9;
+      for (const w of S.walls) for (const q of [w.a, w.b]) { const d = dot(sub(a, q), n) - TH(w) / 2; if (d > -0.01 && d < best) best = d; }
+      if (best < 1e8) r.recuos.push({ role: sideRole(i), d: Math.max(0, best) });
+    });
+  }
+  return r;
+}
+function showAreas() {
+  closeSheets(); const r = areasCalc(), box = $("areasBody"); box.textContent = "";
+  const add_ = (label, val) => { const d = document.createElement("div"); d.className = "qa"; const sp = document.createElement("span"); sp.textContent = label; const bb = document.createElement("b"); bb.textContent = val; d.append(sp, bb); box.appendChild(d); };
+  add_("Área do terreno", r.terreno ? fmt(r.terreno) + " m²" : "sem terreno");
+  add_("Área construída", r.construida ? fmt(r.construida) + " m²" : "—");
+  add_("Taxa de ocupação", r.ocupacao !== null ? (r.ocupacao * 100).toFixed(1).replace(".", ",") + " %" : "—");
+  add_("Soma dos cômodos", r.util ? fmt(r.util) + " m²" : "—");
+  for (const q of r.recuos) add_("Recuo " + q.role.toLowerCase(), fmt(q.d) + " m");
+  $("areasNote").textContent = "Área construída pelo contorno externo das paredes. Cômodos medidos pelo eixo das paredes (só os que têm nome). Recuos medidos da face externa até a divisa.";
+  $("sheetAreas").hidden = false;
+}
+
+/* ---------- exportar DXF e Revit ---------- */
+function crc32(buf) { let c, crc = 0xFFFFFFFF; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 0xFF; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xEDB88320 : c >>> 1; crc = (crc >>> 8) ^ c; } return (crc ^ 0xFFFFFFFF) >>> 0; }
+function zipOne(name, data) {
+  const nm = new TextEncoder().encode(name), crc = crc32(data), sz = data.length;
+  const d = new Date(), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const lh = new DataView(new ArrayBuffer(30)); [[0, 0x04034b50, 4], [4, 20, 2], [6, 0, 2], [8, 0, 2], [10, tm, 2], [12, dt, 2], [14, crc, 4], [18, sz, 4], [22, sz, 4], [26, nm.length, 2], [28, 0, 2]].forEach(([o, v, l]) => l === 4 ? lh.setUint32(o, v, true) : lh.setUint16(o, v, true));
+  const ch = new DataView(new ArrayBuffer(46)); [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0, 2], [10, 0, 2], [12, tm, 2], [14, dt, 2], [16, crc, 4], [20, sz, 4], [24, sz, 4], [28, nm.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, 0, 4]].forEach(([o, v, l]) => l === 4 ? ch.setUint32(o, v, true) : ch.setUint16(o, v, true));
+  const off = 30 + nm.length + sz, cdl = 46 + nm.length;
+  const end = new DataView(new ArrayBuffer(22)); [[0, 0x06054b50, 4], [4, 0, 2], [6, 0, 2], [8, 1, 2], [10, 1, 2], [12, cdl, 4], [16, off, 4], [20, 0, 2]].forEach(([o, v, l]) => l === 4 ? end.setUint32(o, v, true) : end.setUint16(o, v, true));
+  return new Blob([lh.buffer, nm, data, ch.buffer, nm, end.buffer]);
+}
+function latin1(str) { const out = new Uint8Array(str.length); for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); out[i] = c < 256 ? c : 63; } return out; }
+function wallFaces(w) {
+  // linhas das duas faces, cortadas nos cantos, nos encontros em T e nas portas/janelas
+  const L = dist(w.a, w.b); if (L < 0.02) return { lines: [], caps: [] };
+  const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x }, h = TH(w) / 2;
+  const sEnd = { a: { "1": 0, "-1": 0, cap: true }, b: { "1": L, "-1": L, cap: true } };
+  const lineHit = (p1, d1, p2, d2) => { const den = d1.x * d2.y - d1.y * d2.x; if (Math.abs(den) < 1e-9) return null; const q = sub(p2, p1); return (q.x * d2.y - q.y * d2.x) / den; };
+  for (const end of ["a", "b"]) {
+    const P = w[end], outward = end === "a" ? -1 : 1;
+    const shared = S.walls.filter(x => x !== w && (dist(x.a, P) < 1e-4 || dist(x.b, P) < 1e-4));
+    const tee = shared.length ? null : S.walls.find(x => x !== w && (() => { const r = segDist(P, x.a, x.b); return r.d < 1e-3 && r.t > 1e-3 && r.t < 1 - 1e-3; })());
+    if (shared.length === 1) {
+      const X = shared[0], LX = dist(X.a, X.b); if (LX < 0.02) continue;
+      const xFromP = dist(X.a, P) < 1e-4 ? 1 : -1; // direção de X saindo de P
+      const ux = mul(sub(X.b, X.a), 1 / LX), nx = { x: -ux.y, y: ux.x }, hx = TH(X) / 2;
+      if (Math.abs(u.x * ux.y - u.y * ux.x) < 1e-3) continue;
+      for (const f of [1, -1]) {
+        let chosen = null;
+        for (const f2 of [1, -1]) {
+          const sa = lineHit(add(w.a, mul(n, f * h)), u, add(X.a, mul(nx, f2 * hx)), ux); if (sa === null) continue;
+          const Pt = add(add(w.a, mul(n, f * h)), mul(u, sa));
+          const sx = dot(sub(Pt, X.a), ux), sxP = dot(sub(P, X.a), ux);
+          const outA = (sa - (end === "a" ? 0 : L)) * outward, outX = (sx - sxP) * -xFromP;
+          if (Math.sign(Math.round(outA * 1e6)) === Math.sign(Math.round(outX * 1e6))) chosen = sa;
+        }
+        if (chosen !== null) sEnd[end][String(f)] = chosen;
+      }
+      sEnd[end].cap = false;
+    } else if (tee) {
+      const X = tee, LX = dist(X.a, X.b), ux = mul(sub(X.b, X.a), 1 / LX), nx = { x: -ux.y, y: ux.x }, hx = TH(X) / 2;
+      for (const f of [1, -1]) {
+        const cands = [1, -1].map(f2 => lineHit(add(w.a, mul(n, f * h)), u, add(X.a, mul(nx, f2 * hx)), ux)).filter(v => v !== null);
+        if (cands.length) sEnd[end][String(f)] = end === "a" ? Math.max(...cands) : Math.min(...cands);
+      }
+      sEnd[end].cap = false;
+    } else if (shared.length > 1) sEnd[end].cap = false;
+  }
+  // vãos de portas e janelas
+  const gaps = S.openings.filter(o => o.wall === w.id).map(openGeom).filter(Boolean).map(g => [g.c - g.ow / 2, g.c + g.ow / 2]).sort((x, y) => x[0] - y[0]);
+  const lines = [], caps = [];
+  for (const f of [1, -1]) {
+    const o = add(w.a, mul(n, f * h)); let s0 = sEnd.a[String(f)]; const s1 = sEnd.b[String(f)];
+    for (const [g0, g1] of gaps) { if (g0 > s0) lines.push([add(o, mul(u, s0)), add(o, mul(u, Math.min(g0, s1)))]); s0 = Math.max(s0, g1); }
+    if (s1 > s0) lines.push([add(o, mul(u, s0)), add(o, mul(u, s1))]);
+  }
+  for (const [g0, g1] of gaps) for (const g of [g0, g1]) caps.push([add(add(w.a, mul(u, g)), mul(n, h)), add(add(w.a, mul(u, g)), mul(n, -h))]);
+  if (sEnd.a.cap) caps.push([add(w.a, mul(n, h)), add(w.a, mul(n, -h))]);
+  if (sEnd.b.cap) caps.push([add(w.b, mul(n, h)), add(w.b, mul(n, -h))]);
+  return { lines, caps };
+}
+function buildDxf() {
+  const out = [], f = v => (Math.round(v * 10000) / 10000).toString();
+  const X = p => f(p.x), Y = p => f(-p.y);
+  const layers = [["PAREDE", 7], ["PAREDE_EIXO", 8], ["PORTA", 3], ["JANELA", 4], ["COTA", 1], ["TEXTO", 2], ["TERRENO", 6], ["ANOTACAO", 5]];
+  const g = (...kv) => { for (let i = 0; i < kv.length; i += 2) out.push(String(kv[i]), String(kv[i + 1])); };
+  g(0, "SECTION", 2, "HEADER", 9, "$ACADVER", 1, "AC1009", 9, "$DWGCODEPAGE", 3, "ANSI_1252", 9, "$INSUNITS", 70, 6, 0, "ENDSEC");
+  g(0, "SECTION", 2, "TABLES", 0, "TABLE", 2, "LTYPE", 70, 1, 0, "LTYPE", 2, "CONTINUOUS", 70, 0, 3, "Solid line", 72, 65, 73, 0, 40, "0.0", 0, "ENDTAB");
+  g(0, "TABLE", 2, "LAYER", 70, layers.length); for (const [nm, c] of layers) g(0, "LAYER", 2, nm, 70, 0, 62, c, 6, "CONTINUOUS"); g(0, "ENDTAB", 0, "ENDSEC");
+  g(0, "SECTION", 2, "ENTITIES");
+  const line = (ly, a, b) => g(0, "LINE", 8, ly, 10, X(a), 20, Y(a), 30, 0, 11, X(b), 21, Y(b), 31, 0);
+  const text = (ly, p, hgt, str, rot = 0) => g(0, "TEXT", 8, ly, 10, X(p), 20, Y(p), 30, 0, 40, f(hgt), 1, str.replace(/[\r\n]+/g, " "), 50, f(rot), 72, 1, 73, 2, 11, X(p), 21, Y(p), 31, 0);
+  for (const w of S.walls) { line("PAREDE_EIXO", w.a, w.b); const wf = wallFaces(w); for (const [a, b] of wf.lines) line("PAREDE", a, b); for (const [a, b] of wf.caps) line("PAREDE", a, b); }
+  for (const o of S.openings) {
+    const gm = openGeom(o); if (!gm) continue;
+    if (o.kind === "window") { for (const fr of [-0.25, 0, 0.25]) { const off = mul(gm.n, fr * gm.t); line("JANELA", add(gm.p1, off), add(gm.p2, off)); } }
+    else {
+      line("PORTA", gm.hinge, gm.leaf);
+      const a0 = Math.atan2(-gm.side.y, gm.side.x) * 180 / Math.PI, ov = sub(gm.other, gm.hinge), a1 = Math.atan2(-ov.y, ov.x) * 180 / Math.PI;
+      let sweep = ((a1 - a0) % 360 + 360) % 360; const [st, en] = sweep <= 180 ? [a0, a1] : [a1, a0];
+      g(0, "ARC", 8, "PORTA", 10, X(gm.hinge), 20, Y(gm.hinge), 30, 0, 40, f(gm.ow), 50, f((st + 360) % 360), 51, f((en + 360) % 360));
+    }
+  }
+  const cen = centroid();
+  for (const w of S.walls) {
+    if (!showDim(w)) continue;
+    const { L, u, n, mid, ang } = dimInfo(w, cen), off = TH(w) / 2 + 0.4;
+    const a2 = add(w.a, mul(n, off)), b2 = add(w.b, mul(n, off));
+    line("COTA", a2, b2); line("COTA", add(w.a, mul(n, TH(w) / 2 + 0.1)), add(w.a, mul(n, off + 0.1))); line("COTA", add(w.b, mul(n, TH(w) / 2 + 0.1)), add(w.b, mul(n, off + 0.1)));
+    text("COTA", add(mul(add(w.a, w.b), .5), mul(n, off + 0.15)), 0.15, fmt(L), -ang * 180 / Math.PI);
+  }
+  for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
+  if (S.lot) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
+  for (const k of S.inks) for (let i = 1; i < k.pts.length; i++) line("ANOTACAO", { x: k.pts[i - 1][0], y: k.pts[i - 1][1] }, { x: k.pts[i][0], y: k.pts[i][1] });
+  g(0, "ENDSEC", 0, "EOF");
+  return out.join("\r\n") + "\r\n";
+}
+function buildRevit() {
+  const P = p => [Math.round(p.x * 1000) / 1000, Math.round(-p.y * 1000) / 1000];
+  const r = areasCalc();
+  return {
+    formato: "croqui-anderson-revit", versao: 1, unidades: "metros", eixoY: "para cima (igual Revit/CAD)", referenciaParede: "eixo",
+    titulo: S.title || "Croqui", data: new Date().toISOString().slice(0, 10),
+    paredes: S.walls.map(w => ({ id: w.id, inicio: P(w.a), fim: P(w.b), espessura: TH(w), comprimento: Math.round(dist(w.a, w.b) * 1000) / 1000 })),
+    portas: S.openings.filter(o => o.kind === "door").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, distanciaDoInicio: Math.round(gm.c * 1000) / 1000, dobradica: P(gm.hinge), abrePara: P(add(gm.hinge, gm.side)) }; }).filter(Boolean),
+    janelas: S.openings.filter(o => o.kind === "window").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, distanciaDoInicio: Math.round(gm.c * 1000) / 1000 }; }).filter(Boolean),
+    ambientes: S.texts.map(t => ({ nome: t.s, ponto: P(t), area: Math.round(areaOf(t) * 100) / 100 })),
+    terreno: S.lot ? S.lot.pts.map(P) : null,
+    areas: { terreno: Math.round(r.terreno * 100) / 100, construida: Math.round(r.construida * 100) / 100, ocupacao: r.ocupacao }
+  };
+}
+
+/* ---------- desenho na tela ---------- */
+let W = 0, H = 0, dpr = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); dpr = Math.min(window.devicePixelRatio || 1, 3);
+  W = r.width; H = r.height; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); draw();
+}
+let live = null, rawStroke = null, eraseTrail = null;
+const COL = { bg: "#1c4c9e", grid1: "rgba(255,255,255,.07)", grid5: "rgba(255,255,255,.16)", wall: "#ffffff", dim: "rgba(235,243,255,.92)", acc: "#ffcf4a", ink: "rgba(255,255,255,.45)" };
+
+function draw() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, W, H);
+  drawGrid();
+  drawLot();
+  const c = centroid();
+  // paredes
+  const wl = wpx(opt.thick);
+  ctx.lineCap = "square"; ctx.lineJoin = "miter";
+  // parede em duas faces (estilo BIM): traço cheio por fora, miolo pintado com o fundo
+  const FACE = 1.6;
+  for (const pass of [0, 1]) for (const w of S.walls) {
+    const isSel = sel && sel.type === "wall" && sel.id === w.id;
+    const a = toS(w.a), b = toS(w.b), full = wpx(TH(w));
+    if (pass === 1 && full - 2 * FACE < 1.5) continue;
+    ctx.strokeStyle = pass ? COL.bg : (isSel ? COL.acc : COL.wall);
+    ctx.lineWidth = pass ? full - 2 * FACE : full;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  drawOpenings();
+  drawInks();
+  for (const w of S.walls) if (showDim(w)) drawDim(w, c, sel && sel.type === "wall" && sel.id === w.id);
+  // textos
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const t of S.texts) {
+    const p = toS(t), isSel = sel && sel.type === "text" && sel.id === t.id;
+    ctx.font = "600 13px Inter, system-ui, sans-serif";
+    ctx.fillStyle = isSel ? COL.acc : "#ffffff";
+    ctx.fillText(t.s, p.x, p.y);
+    const a = areaOf(t);
+    if (a) { ctx.font = "500 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.fillText(fmt(a) + " m²", p.x, p.y + 16); }
+  }
+  drawNeighborDims();
+  // ponta selecionada
+  if (sel && sel.type === "wall") {
+    const w = S.walls.find(x => x.id === sel.id);
+    if (w) {
+      const fixed = toS(w.fixB ? w.b : w.a), mov = toS(w.fixB ? w.a : w.b);
+      ctx.fillStyle = COL.acc; ctx.fillRect(fixed.x - 6, fixed.y - 6, 12, 12);
+      ctx.strokeStyle = COL.acc; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(mov.x, mov.y, 7, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  // traço em andamento
+  if (rawStroke && rawStroke.length > 1) {
+    ctx.strokeStyle = COL.ink; ctx.lineWidth = 2; ctx.setLineDash([2, 5]);
+    ctx.beginPath(); rawStroke.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (live && live.length > 1) {
+    ctx.strokeStyle = COL.acc; ctx.lineWidth = wl;
+    ctx.beginPath(); live.forEach((p, i) => { const s = toS(p); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); ctx.stroke();
+  }
+  if (eraseTrail) { ctx.strokeStyle = "rgba(255,138,128,.8)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(eraseTrail.x, eraseTrail.y, 14, 0, Math.PI * 2); ctx.stroke(); }
+  // escala gráfica
+  let m = 1; const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50];
+  for (const s of steps) { if (s * view.k >= 50) { m = s; break; } m = s; }
+  $("scalebarI").style.width = (m * view.k) + "px";
+  $("scalebar").firstElementChild.textContent = (m < 1 ? (m * 100) + " cm" : m + " m");
+}
+function drawGrid() {
+  const step = view.k >= 25 ? 1 : (view.k >= 6 ? 5 : 10);
+  const tl = toW({ x: 0, y: 0 }), br = toW({ x: W, y: H });
+  ctx.lineWidth = 1;
+  const x0 = Math.floor(tl.x / step) * step, y0 = Math.floor(tl.y / step) * step;
+  if (view.k >= 70) { // meio metro
+    ctx.strokeStyle = "rgba(255,255,255,.04)"; ctx.beginPath();
+    for (let x = Math.floor(tl.x) + 0.5; x < br.x; x += 1) { const s = Math.round(x * view.k + view.ox) + .5; ctx.moveTo(s, 0); ctx.lineTo(s, H); }
+    for (let y = Math.floor(tl.y) + 0.5; y < br.y; y += 1) { const s = Math.round(y * view.k + view.oy) + .5; ctx.moveTo(0, s); ctx.lineTo(W, s); }
+    ctx.stroke();
+  }
+  for (const pass of [0, 1]) {
+    ctx.strokeStyle = pass ? COL.grid5 : COL.grid1; ctx.beginPath();
+    for (let x = x0; x < br.x; x += step) { const i = Math.round(x / step); if ((i % 5 === 0) !== !!pass) continue; const s = Math.round(x * view.k + view.ox) + .5; ctx.moveTo(s, 0); ctx.lineTo(s, H); }
+    for (let y = y0; y < br.y; y += step) { const i = Math.round(y / step); if ((i % 5 === 0) !== !!pass) continue; const s = Math.round(y * view.k + view.oy) + .5; ctx.moveTo(0, s); ctx.lineTo(W, s); }
+    ctx.stroke();
+  }
+}
+function drawDim(w, c, isSel) {
+  const { L, u, n, mid, ang } = dimInfo(w, c);
+  const a = toS(w.a), b = toS(w.b), off = 14 + wpx(TH(w)) / 2;
+  const nS = n; // mesma orientação na tela
+  const a2 = { x: a.x + nS.x * off, y: a.y + nS.y * off }, b2 = { x: b.x + nS.x * off, y: b.y + nS.y * off };
+  const col = isSel ? COL.acc : COL.dim;
+  ctx.strokeStyle = col; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(a.x + nS.x * (off - 6), a.y + nS.y * (off - 6)); ctx.lineTo(a.x + nS.x * (off + 4), a.y + nS.y * (off + 4));
+  ctx.moveTo(b.x + nS.x * (off - 6), b.y + nS.y * (off - 6)); ctx.lineTo(b.x + nS.x * (off + 4), b.y + nS.y * (off + 4));
+  ctx.moveTo(a2.x, a2.y); ctx.lineTo(b2.x, b2.y);
+  // tiques a 45°
+  const t = { x: (u.x + nS.x) * 3.5, y: (u.y + nS.y) * 3.5 };
+  ctx.moveTo(a2.x - t.x, a2.y - t.y); ctx.lineTo(a2.x + t.x, a2.y + t.y);
+  ctx.moveTo(b2.x - t.x, b2.y - t.y); ctx.lineTo(b2.x + t.x, b2.y + t.y);
+  ctx.stroke();
+  const label = fmt(L);
+  const pm = toS(mid); const tp = { x: pm.x + nS.x * (off + 9), y: pm.y + nS.y * (off + 9) };
+  ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang);
+  ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = COL.bg; ctx.fillRect(-tw / 2 - 3, -8, tw + 6, 16);
+  ctx.fillStyle = col; ctx.fillText(label, 0, 0);
+  ctx.restore();
+}
+
+/* ---------- área do cômodo (polígono fechado em volta do texto) ---------- */
+let facesCache = { key: "", list: [] };
+function facesList() {
+  const ck = JSON.stringify(S.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y]));
+  if (facesCache.key === ck) return facesCache.list;
+  const key = p => Math.round(p.x * 100) + "," + Math.round(p.y * 100);
+  const nodes = new Map(); const edges = [];
+  const addNode = p => { const k = key(p); if (!nodes.has(k)) nodes.set(k, { x: p.x, y: p.y, k, adj: [] }); return nodes.get(k); };
+  const allP = endpoints();
+  for (const w of S.walls) {
+    const on = [w.a, w.b];
+    for (const p of allP) { const r = segDist(p, w.a, w.b); if (r.d < 0.005 && r.t > 0.001 && r.t < 0.999) on.push(p); }
+    const ab = sub(w.b, w.a);
+    on.sort((p, q) => dot(sub(p, w.a), ab) - dot(sub(q, w.a), ab));
+    for (let i = 1; i < on.length; i++) { const A = addNode(on[i - 1]), B = addNode(on[i]); if (A !== B && !A.adj.includes(B)) { A.adj.push(B); B.adj.push(A); edges.push([A, B]); } }
+  }
+  const list = [];
+  if (edges.length >= 3) {
+    const used = new Set();
+    for (const [A0, B0] of edges) for (const [st, e] of [[A0, B0], [B0, A0]]) {
+      const id = st.k + ">" + e.k; if (used.has(id)) continue;
+      const poly = [st]; let p = st, q = e, guard = 0, ok = false;
+      while (guard++ < 500) {
+        used.add(p.k + ">" + q.k); poly.push(q);
+        const inA = Math.atan2(p.y - q.y, p.x - q.x);
+        let nxt = null, bestT = 1e9;
+        for (const r of q.adj) { if (r === p && q.adj.length > 1) continue; let an = Math.atan2(r.y - q.y, r.x - q.x) - inA; while (an <= 1e-9) an += Math.PI * 2; if (an < bestT) { bestT = an; nxt = r; } }
+        if (!nxt) break; p = q; q = nxt;
+        if (p === st && q === e) { ok = true; break; }
+      }
+      if (!ok) continue;
+      poly.pop();
+      const A = Math.abs(polyArea(poly)); if (A < 1e-6) continue;
+      list.push({ poly, A });
+    }
+  }
+  facesCache = { key: ck, list };
+  return list;
+}
+function polyArea(poly) { let A = 0; for (let i = 0; i < poly.length; i++) { const P = poly[i], Q = poly[(i + 1) % poly.length]; A += P.x * Q.y - Q.x * P.y; } return A / 2; }
+function polyPerim(poly) { let L = 0; for (let i = 0; i < poly.length; i++) L += dist(poly[i], poly[(i + 1) % poly.length]); return L; }
+function areaOf(t) {
+  let best = 0;
+  for (const f of facesList()) if (inside(t, f.poly) && (best === 0 || f.A < best)) best = f.A;
+  return best;
+}
+function inside(p, poly) {
+  let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) c = !c;
+  } return c;
+}
+
+/* ---------- interação ---------- */
+const ptrs = new Map();
+let penMode = false;
+let drag = null; // {mode, ...}
+function hitWall(sp, tolPx = 14) {
+  let best = null, bd = tolPx;
+  for (const w of S.walls) { const r = segDist(sp, toS(w.a), toS(w.b)); if (r.d < bd) { bd = r.d; best = w; } }
+  return best;
+}
+function hitText(sp) {
+  ctx.font = "600 13px Inter, system-ui, sans-serif";
+  for (let i = S.texts.length - 1; i >= 0; i--) {
+    const t = S.texts[i], p = toS(t), w = ctx.measureText(t.s).width / 2 + 8;
+    if (Math.abs(sp.x - p.x) < w && sp.y > p.y - 13 && sp.y < p.y + 24) return t;
+  } return null;
+}
+function hitVertex(sp) {
+  let best = null, bd = 16;
+  for (const w of S.walls) for (const e of ["a", "b"]) { const d = dist(sp, toS(w[e])); if (d < bd) { bd = d; best = w[e]; } }
+  return best;
+}
+function local(ev) { const r = cv.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+
+cv.addEventListener("pointerdown", ev => {
+  cv.setPointerCapture(ev.pointerId);
+  const p = local(ev); ptrs.set(ev.pointerId, p);
+  hideHint();
+  if (ptrs.size === 2) { // pinça
+    rawStroke = null; live = null; eraseTrail = null;
+    if (drag && drag.mode === "vertex" && drag.moved) { /* mantém */ }
+    const [p1, p2] = [...ptrs.values()];
+    drag = { mode: "pinch", d0: dist(p1, p2), k0: view.k, c0: toW(mul(add(p1, p2), .5)) };
+    draw(); return;
+  }
+  if (ptrs.size > 2) return;
+  if (ev.pointerType === "pen" && !penMode) { penMode = true; toast("Caneta detectada: a caneta desenha, o dedo só move e dá zoom."); }
+  const fingerOnly = penMode && ev.pointerType === "touch" && (tool === "draw" || tool === "erase" || tool === "ink");
+  if (ev.button === 1 || ev.button === 2 || tool === "pan" || fingerOnly) { drag = { mode: "pan", last: p }; return; }
+  if (tool === "draw") { rawStroke = [p]; drag = { mode: "draw" }; }
+  else if (tool === "ink") { const w0 = toW(p); inkCur = { id: nid(), c: opt.inkColor, pts: [[clean(w0.x), clean(w0.y)]] }; drag = { mode: "ink", last: p }; }
+  else if (tool === "erase") { drag = { mode: "erase", did: false }; eraseAt(p); }
+  else if (tool === "text") { drag = { mode: "textTap", start: p }; }
+  else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
+  else if (tool === "lot") {
+    const si = hitLotSide(p);
+    if (si >= 0) drag = { mode: "lotTap", si, start: p };
+    else if (S.lot && inside(toW(p), S.lot.pts)) drag = { mode: "lotMove", start: p, startW: toW(p), orig: S.lot.pts.map(q => ({ ...q })), moved: false };
+    else { rawStroke = [p]; drag = { mode: "lotDraw" }; }
+  }
+  else if (tool === "door" || tool === "window") {
+    const o = hitOpen(p);
+    drag = o ? { mode: "open", o, start: p, moved: false } : { mode: "openTap", start: p, kind: tool };
+  }
+  else if (tool === "select") {
+    const v = hitVertex(p), t = hitText(p), w = hitWall(p), op = hitOpen(p);
+    if (t) { drag = { mode: "text", t, start: p, moved: false }; }
+    else if (op && !v) { drag = { mode: "open", o: op, start: p, moved: false }; }
+    else if (v) {
+      const refs = []; for (const ww of S.walls) for (const e of ["a", "b"]) if (dist(ww[e], v) < 1e-6) refs.push(ww[e]);
+      drag = { mode: "vertex", refs, start: p, orig: { x: v.x, y: v.y }, moved: false, w };
+    }
+    else if (w) { drag = { mode: "wallTap", w, start: p }; }
+    else { drag = { mode: "pan", last: p, tapClear: true, start: p }; }
+  }
+});
+cv.addEventListener("pointermove", ev => {
+  const p = local(ev);
+  if (!ptrs.has(ev.pointerId)) { if (tool === "erase" && ev.pointerType === "mouse") { eraseTrail = p; draw(); } return; }
+  ptrs.set(ev.pointerId, p);
+  if (!drag) return;
+  if (drag.mode === "pinch" && ptrs.size >= 2) {
+    const [p1, p2] = [...ptrs.values()], m = mul(add(p1, p2), .5);
+    view.k = clampK(drag.k0 * dist(p1, p2) / (drag.d0 || 1));
+    view.ox = m.x - drag.c0.x * view.k; view.oy = m.y - drag.c0.y * view.k; draw(); return;
+  }
+  if (drag.mode === "pan") { view.ox += p.x - drag.last.x; view.oy += p.y - drag.last.y; drag.last = p; draw(); return; }
+  if (drag.mode === "lotDraw") { const last = rawStroke[rawStroke.length - 1]; if (dist(last, p) >= 2) { rawStroke.push(p); live = straighten(rawStroke); draw(); } return; }
+  if (drag.mode === "lotTap" && dist(p, drag.start) > 8) { drag = { mode: "lotDraw" }; rawStroke = [p]; return; }
+  if (drag.mode === "lotMove") {
+    if (!drag.moved && dist(p, drag.start) < 6) return;
+    if (!drag.moved) { snapshot(); drag.moved = true; }
+    let dx = toW(p).x - drag.startW.x, dy = toW(p).y - drag.startW.y; if (opt.round) { dx = r5(dx); dy = r5(dy); }
+    S.lot.pts.forEach((q, i) => { q.x = clean(drag.orig[i].x + dx); q.y = clean(drag.orig[i].y + dy); }); draw(); return;
+  }
+  if (drag.mode === "ink") {
+    if (dist(p, drag.last) < 1.5) return; drag.last = p;
+    const w0 = toW(p); inkCur.pts.push([Math.round(w0.x * 1000) / 1000, Math.round(w0.y * 1000) / 1000]); draw(); return;
+  }
+  if (drag.mode === "draw") {
+    const last = rawStroke[rawStroke.length - 1];
+    if (dist(last, p) >= 2) { rawStroke.push(p); live = straighten(rawStroke); draw(); }
+    return;
+  }
+  if (drag.mode === "erase") { eraseTrail = p; eraseAt(p); return; }
+  if (drag.mode === "open") {
+    if (!drag.moved && dist(p, drag.start) < 6) return;
+    if (!drag.moved) { snapshot(); drag.moved = true; }
+    const g = openGeom(drag.o); if (!g) return;
+    let pos = dot(sub(toW(p), g.w.a), g.u); if (opt.round) pos = r5(pos);
+    drag.o.pos = clean(Math.max(g.ow / 2, Math.min(g.L - g.ow / 2, pos)));
+    sel = { type: "open", id: drag.o.id }; draw(); return;
+  }
+  if (drag.mode === "text") {
+    if (!drag.moved && dist(p, drag.start) < 6) return;
+    if (!drag.moved) { snapshot(); drag.moved = true; }
+    const w = toW(p); drag.t.x = clean(opt.round ? r5(w.x) : w.x); drag.t.y = clean(opt.round ? r5(w.y) : w.y);
+    sel = { type: "text", id: drag.t.id }; draw(); return;
+  }
+  if (drag.mode === "vertex") {
+    if (!drag.moved && dist(p, drag.start) < 6) return;
+    if (!drag.moved) { snapshot(); drag.moved = true; closeSheets(); }
+    let w = toW(p);
+    // ímã em outros pontos / alinhamento
+    const tol = 16 / view.k, others = endpoints().filter(q => !drag.refs.includes(q));
+    let snapped = null, bd = tol;
+    for (const q of others) { const d = dist(q, w); if (d < bd) { bd = d; snapped = q; } }
+    if (snapped) w = { x: snapped.x, y: snapped.y };
+    else {
+      let ax = null, ay = null, dx = tol, dy = tol;
+      for (const q of others) { if (Math.abs(q.x - w.x) < dx) { dx = Math.abs(q.x - w.x); ax = q.x; } if (Math.abs(q.y - w.y) < dy) { dy = Math.abs(q.y - w.y); ay = q.y; } }
+      w = { x: ax ?? (opt.round ? r5(w.x) : w.x), y: ay ?? (opt.round ? r5(w.y) : w.y) };
+    }
+    for (const r of drag.refs) { r.x = clean(w.x); r.y = clean(w.y); }
+    draw(); return;
+  }
+  if (drag.mode === "wallTap" && dist(p, drag.start) > 8) {
+    const w = drag.w, L = dist(w.a, w.b); if (L < 0.05) { drag = { mode: "pan", last: p }; return; }
+    const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x };
+    const refs = []; for (const x of S.walls) for (const e of ["a", "b"]) if (x === w || segDist(x[e], w.a, w.b).d < 1e-3) refs.push({ pt: x[e], o: { ...x[e] } });
+    snapshot(); closeSheets(); sel = { type: "wall", id: w.id };
+    drag = { mode: "wallMove", w, n, refs, start0: toW(drag.start) };
+  }
+  if (drag.mode === "wallMove") {
+    let m = dot(sub(toW(p), drag.start0), drag.n); if (opt.round) m = r5(m);
+    for (const r of drag.refs) { r.pt.x = clean(r.o.x + drag.n.x * m); r.pt.y = clean(r.o.y + drag.n.y * m); }
+    draw(); return;
+  }
+});
+function endPtr(ev) {
+  const p = ptrs.get(ev.pointerId) || local(ev);
+  ptrs.delete(ev.pointerId);
+  if (!drag) return;
+  if (drag.mode === "pinch") { if (ptrs.size === 0) drag = null; else { const q = [...ptrs.values()][0]; drag = { mode: "pan", last: q }; } return; }
+  if (ptrs.size > 0) return;
+  const d = drag; drag = null;
+  if (d.mode === "lotDraw") { const raw = rawStroke; rawStroke = null; live = null; if (raw && raw.length > 3) lotFromStroke(raw); else draw(); return; }
+  if (d.mode === "lotTap") { openLot(d.si); return; }
+  if (d.mode === "lotMove") { if (d.moved) after(); else openLot(null); return; }
+  if (d.mode === "ink") { if (inkCur) { snapshot(); S.inks.push(inkCur); inkCur = null; after(); } return; }
+  if (d.mode === "draw") {
+    const pts = rawStroke ? straighten(rawStroke) : [];
+    rawStroke = null; live = null;
+    if (pts.length >= 2) {
+      snapshot();
+      for (let i = 1; i < pts.length; i++) S.walls.push({ id: nid(), a: { ...pts[i - 1] }, b: { ...pts[i] }, t: opt.thick });
+      // se o último ponto caiu no meio de uma parede, tudo bem: as cotas continuam por parede
+      after();
+    } else draw();
+  } else if (d.mode === "erase") { eraseTrail = null; if (d.did) after(); else draw(); }
+  else if (d.mode === "filTap") { if (dist(p, d.start) < 10) filletPick(p); }
+  else if (d.mode === "textTap") { if (dist(p, d.start) < 10) openText(null, toW(p)); }
+  else if (d.mode === "text") { if (d.moved) after(); else openText(d.t); }
+  else if (d.mode === "open") { if (d.moved) after(); else openOpening(d.o); }
+  else if (d.mode === "openTap") { if (dist(p, d.start) < 10) placeOpening(d.kind, p); }
+  else if (d.mode === "vertex") { if (d.moved) { dropZero(); after(); } else selectWall(d.w); }
+  else if (d.mode === "wallTap") selectWall(d.w);
+  else if (d.mode === "wallMove") { dropZero(); after(); if (S.walls.includes(d.w)) selectWall(d.w); }
+  else if (d.mode === "pan" && d.tapClear && dist(p, d.start) < 6) { closeSheets(); }
+}
+cv.addEventListener("pointerup", endPtr);
+cv.addEventListener("pointercancel", endPtr);
+cv.addEventListener("pointerleave", () => { if (tool === "erase" && !drag) { eraseTrail = null; draw(); } });
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("wheel", ev => {
+  ev.preventDefault(); const p = local(ev), w = toW(p);
+  view.k = clampK(view.k * Math.exp(-ev.deltaY * 0.0015));
+  view.ox = p.x - w.x * view.k; view.oy = p.y - w.y * view.k; draw();
+}, { passive: false });
+const clampK = k => Math.max(3, Math.min(600, k));
+function zoomBy(f) { const c = { x: W / 2, y: H / 2 }, w = toW(c); view.k = clampK(view.k * f); view.ox = c.x - w.x * view.k; view.oy = c.y - w.y * view.k; draw(); }
+$("zIn").onclick = () => zoomBy(1.3); $("zOut").onclick = () => zoomBy(1 / 1.3);
+
+function eraseAt(p) {
+  const op = hitOpen(p);
+  const ik = op ? null : hitInk(p);
+  const w = op || ik ? null : hitWall(p, 14), t = hitText(p);
+  if (!w && !t && !op && !ik) { draw(); return; }
+  if (!drag.did) { snapshot(); drag.did = true; }
+  if (ik) S.inks = S.inks.filter(x => x !== ik);
+  if (!drag.did) { snapshot(); drag.did = true; }
+  if (op) S.openings = S.openings.filter(x => x !== op);
+  if (w) S.openings = S.openings.filter(x => x.wall !== w.id);
+  if (w) S.walls = S.walls.filter(x => x !== w);
+  if (t) S.texts = S.texts.filter(x => x !== t);
+  if (sel) closeSheets();
+  draw();
+}
+function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
+
+/* ---------- painéis ---------- */
+function closeSheets() {
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas"]) $(id).hidden = true;
+  sel = null; textCtx = null; draw();
+}
+document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
+function selectWall(w) {
+  closeSheets(); sel = { type: "wall", id: w.id };
+  $("wallLen").value = w.dim ? fmt(dist(w.a, w.b)) : ""; $("wallLen").placeholder = "desenhada com ≈ " + fmt(dist(w.a, w.b));
+  $("wallHideDim").hidden = !w.dim; $("sheetWall").hidden = false; syncThick(); renderDistRows(w); draw();
+  if (matchMedia("(pointer:fine)").matches) setTimeout(() => { $("wallLen").focus(); $("wallLen").select(); }, 30);
+}
+function curWall() { return sel && sel.type === "wall" ? S.walls.find(w => w.id === sel.id) : null; }
+$("wallApply").onclick = applyLen;
+$("wallLen").addEventListener("keydown", e => { if (e.key === "Enter") applyLen(); });
+function applyLen() {
+  const w = curWall(); if (!w) return;
+  const v = parseLen($("wallLen").value);
+  if (!v) { toast("Digite a medida em metros, ex.: 3,50"); return; }
+  const fixed = w.fixB ? w.b : w.a, moving = w.fixB ? w.a : w.b;
+  const L = dist(fixed, moving); if (L < 1e-6) return;
+  const u = mul(sub(moving, fixed), 1 / L), delta = v - L;
+  snapshot();
+  w.dim = true;
+  const mv = mul(u, delta);
+  if ($("wallStretch").checked) {
+    // estica: tudo que está do lado da ponta que anda (projeção >= L) vai junto
+    const pts = new Set();
+    for (const ww of S.walls) for (const e of ["a", "b"]) if (dot(sub(ww[e], fixed), u) >= L - 0.005) pts.add(ww[e]);
+    pts.forEach(p => { p.x = clean(p.x + mv.x); p.y = clean(p.y + mv.y); });
+    for (const t of S.texts) if (dot(sub(t, fixed), u) >= L - 0.005) { t.x = clean(t.x + mv.x); t.y = clean(t.y + mv.y); }
+  } else {
+    const o = { x: moving.x, y: moving.y };
+    for (const ww of S.walls) for (const e of ["a", "b"]) if (dist(ww[e], o) < 1e-6) { ww[e].x = clean(o.x + mv.x); ww[e].y = clean(o.y + mv.y); }
+  }
+  dropZero(); after();
+  toast("Medida aplicada: " + fmt(v) + " m");
+  // segue para a próxima parede ligada que ainda não tem medida
+  const endP = w.fixB ? w.a : w.b, startP = w.fixB ? w.b : w.a;
+  const near = (q, r) => dist(q, r) < 1e-4;
+  const nxt = S.walls.find(x => x !== w && !x.dim && (near(x.a, endP) || near(x.b, endP))) || S.walls.find(x => x !== w && !x.dim && (near(x.a, startP) || near(x.b, startP)));
+  if (nxt) { if (near(nxt.b, endP) || near(nxt.b, startP)) nxt.fixB = true; selectWall(nxt); if (!matchMedia("(pointer:fine)").matches) setTimeout(() => $("wallLen").focus(), 30); }
+  else { $("wallLen").value = fmt(dist(w.a, w.b)); $("wallHideDim").hidden = false; }
+}
+function syncThick() { const w = curWall(); document.querySelectorAll("#wallThick [data-t]").forEach(b => b.classList.toggle("on", !!w && Math.abs(TH(w) - +b.dataset.t) < 1e-6)); }
+document.querySelectorAll("#wallThick [data-t]").forEach(b => b.addEventListener("click", () => {
+  const w = curWall(); if (!w) return; snapshot(); w.t = +b.dataset.t; opt.thick = w.t; $("optThick").value = b.dataset.t; after(); syncThick();
+}));
+$("thickAll").onclick = () => { const w = curWall(); if (!w) return; snapshot(); const t = TH(w); S.walls.forEach(x => x.t = t); after(); toast("Todas as paredes com " + Math.round(t * 100) + " cm"); };
+$("optThick").onchange = e => { opt.thick = +e.target.value; try { localStorage.setItem(STORE + "-t", e.target.value); } catch (er) {} toast("Paredes novas com " + Math.round(opt.thick * 100) + " cm"); };
+try { const t0 = localStorage.getItem(STORE + "-t"); if (t0 && ["0.10","0.12","0.15","0.20"].includes(t0)) { opt.thick = +t0; $("optThick").value = t0; } } catch (er) {}
+$("wallHideDim").onclick = () => { const w = curWall(); if (!w) return; snapshot(); w.dim = false; after(); $("wallHideDim").hidden = true; };
+function setFace(f) { opt.face = f; $("distAxis").classList.toggle("on", !f); $("distFace").classList.toggle("on", f); const w = curWall(); if (w) renderDistRows(w); draw(); }
+$("distAxis").onclick = () => setFace(false); $("distFace").onclick = () => setFace(true);
+$("lotApply").onclick = lotApply;
+$("lotLen").addEventListener("keydown", e => { if (e.key === "Enter") lotApply(); });
+$("lotFront").onclick = () => { if (!S.lot || lotSel === null) return; snapshot(); S.lot.front = lotSel; after(); openLot(lotSel); toast("Frente marcada"); };
+$("lotRect").onclick = () => {
+  const W0 = parseLen($("lotW").value), D0 = parseLen($("lotD").value);
+  if (!W0 || !D0) { toast("Digite a frente e o fundo em metros"); return; }
+  const b = bounds(); let x0 = 0, y1 = D0;
+  if (b && S.walls.length) { const bw = b.maxx - b.minx; x0 = b.minx - Math.max(0, (W0 - bw) / 2); y1 = b.maxy + Math.max(0, Math.min(4, D0 - (b.maxy - b.miny)) ); }
+  x0 = clean(r5(x0)); y1 = clean(r5(y1));
+  snapshot(); S.lot = { pts: [{ x: x0, y: clean(y1 - D0) }, { x: clean(x0 + W0), y: clean(y1 - D0) }, { x: clean(x0 + W0), y: y1 }, { x: x0, y: y1 }], front: 2 };
+  after(); fit(); openLot(null); toast("Terreno de " + fmt(W0) + " x " + fmt(D0) + " m");
+};
+$("lotDel").onclick = () => { if (!S.lot) return; snapshot(); S.lot = null; closeSheets(); after(); };
+$("btnAreas").onclick = showAreas;
+$("expDxf").onclick = () => { if (!S.walls.length) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; } if (!downloads) offer(fileBase() + ".dxf", new Blob([latin1(buildDxf())])); else offer(fileBase() + "-dxf.zip", zipOne(fileBase() + ".dxf", latin1(buildDxf()))); $("expMsg").textContent = "O DXF vai dentro de um .zip (o celular não deixa salvar .dxf direto). Descompacte e abra no AutoCAD. Camadas: PAREDE, PORTA, JANELA, COTA, TEXTO, TERRENO."; };
+$("expRevit").onclick = () => { if (!S.walls.length) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; } offer(fileBase() + "-revit.json", JSON.stringify(buildRevit(), null, 1)); $("expMsg").textContent = "Mande este arquivo para o Claude do PC: ele monta as paredes, portas e janelas no Revit pelo Horizun, no template do escritório."; };
+$("wallSwap").onclick = () => { const w = curWall(); if (!w) return; w.fixB = !w.fixB; save(); draw(); };
+$("wallFlip").onclick = () => { const w = curWall(); if (!w) return; snapshot(); w.flip = !w.flip; after(); };
+$("wallDel").onclick = () => { const w = curWall(); if (!w) return; snapshot(); S.walls = S.walls.filter(x => x !== w); S.openings = S.openings.filter(o => o.wall !== w.id); closeSheets(); after(); };
+$("openApply").onclick = () => { const v = parseLen($("openW").value); if (!v) { toast("Digite a largura em metros, ex.: 0,80"); return; } setOpenW(v); };
+$("openW").addEventListener("keydown", e => { if (e.key === "Enter") $("openApply").click(); });
+$("openHinge").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.hinge = !o.hinge; after(); };
+$("openSide").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.side = !o.side; after(); };
+$("openDel").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); S.openings = S.openings.filter(x => x !== o); closeSheets(); after(); };
+
+let textCtx = null;
+function openText(t, pos) {
+  closeSheets(); textCtx = { t, pos };
+  if (t) sel = { type: "text", id: t.id };
+  $("textTitle").textContent = t ? "Editar texto" : "Nome do cômodo";
+  $("textVal").value = t ? t.s : ""; $("textDel").hidden = !t; $("sheetText").hidden = false;
+  setTimeout(() => $("textVal").focus(), 30); draw();
+}
+function textOk() {
+  if (!textCtx) return; const s = $("textVal").value.trim();
+  if (!s) { closeSheets(); return; }
+  snapshot();
+  if (textCtx.t) textCtx.t.s = s;
+  else S.texts.push({ id: nid(), x: clean(textCtx.pos.x), y: clean(textCtx.pos.y), s });
+  closeSheets(); after();
+}
+$("textOk").onclick = textOk;
+$("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk(); });
+$("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
+
+$("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], lot: null, title: "" }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
+$("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
+
+function setTool(t) {
+  tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Fillet: toque na primeira parede e depois na segunda. Elas se estendem ou cortam até formar o canto.", ink: "Pincel: escreva ou rabisque à mão livre. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela." }[t];
+  showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; closeSheets();
+  if (t === "lot" && !S.lot) openLot(null);
+  cv.style.cursor = t === "pan" ? "grab" : t === "erase" ? "cell" : t === "text" ? "text" : "crosshair";
+}
+document.querySelectorAll(".tool[data-tool]").forEach(b => b.addEventListener("click", () => {
+  if (b.dataset.tool === "lot" && tool === "lot") { openLot(null); return; }
+  if (b.dataset.tool === "ink" && tool === "ink") { opt.inkColor = opt.inkColor === "w" ? "y" : "w"; b.style.color = opt.inkColor === "y" ? "var(--accent)" : ""; toast(opt.inkColor === "y" ? "Pincel amarelo" : "Pincel branco"); return; }
+  setTool(b.dataset.tool);
+}));
+$("undo").onclick = undo; $("redo").onclick = redo;
+$("optOrtho").onclick = e => { opt.ortho = !opt.ortho; e.currentTarget.classList.toggle("on", opt.ortho); toast(opt.ortho ? "Prendendo em 0°, 45° e 90°" : "Ângulo livre"); };
+$("optRound").onclick = e => { opt.round = !opt.round; e.currentTarget.classList.toggle("on", opt.round); toast(opt.round ? "Arredondando a cada 5 cm" : "Sem arredondar"); };
+$("btnFit").onclick = fit;
+$("optDims").onclick = e => { opt.allDims = !opt.allDims; e.currentTarget.classList.toggle("on", opt.allDims); draw(); toast(opt.allDims ? "Mostrando a medida de todas as paredes" : "Só as medidas que você indicou"); };
+
+let hintT;
+function showHint(m) { const h = $("hint"); h.textContent = m; h.style.opacity = 1; clearTimeout(hintT); hintT = setTimeout(hideHint, 4500); }
+function hideHint() { $("hint").style.opacity = 0; }
+let toastT;
+function toast(m) { const t = $("toast"); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") { if (e.key === "Escape") closeSheets(); return; }
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+  else if (k === "escape") closeSheets();
+  else if ((k === "delete" || k === "backspace") && sel) { if (sel.type === "wall") $("wallDel").click(); else if (sel.type === "open") $("openDel").click(); else { snapshot(); S.texts = S.texts.filter(t => t.id !== sel.id); closeSheets(); after(); } }
+  else if (k === "l") setTool("draw"); else if (k === "v") setTool("select"); else if (k === "t") setTool("text"); else if (k === "e") setTool("erase"); else if (k === "h") setTool("pan"); else if (k === "b") setTool("ink"); else if (k === "f") setTool("fillet"); else if (k === "g") setTool("lot"); else if (k === "p") setTool("door"); else if (k === "j") setTool("window");
+});
+
+/* ---------- enquadrar ---------- */
+function bounds() {
+  let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+  for (const w of S.walls) for (const p of [w.a, w.b]) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
+  if (S.lot) for (const q of S.lot.pts) { minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y); }
+  for (const k of S.inks) for (const q of k.pts) { minx = Math.min(minx, q[0]); maxx = Math.max(maxx, q[0]); miny = Math.min(miny, q[1]); maxy = Math.max(maxy, q[1]); }
+  for (const t of S.texts) { minx = Math.min(minx, t.x); maxx = Math.max(maxx, t.x); miny = Math.min(miny, t.y); maxy = Math.max(maxy, t.y); }
+  if (minx > maxx) return null; return { minx, miny, maxx, maxy };
+}
+function fit() {
+  const b = bounds();
+  if (!b) { view.k = 40; view.ox = W / 2; view.oy = H / 2; draw(); return; }
+  const pad = 70, bw = Math.max(1, b.maxx - b.minx), bh = Math.max(1, b.maxy - b.miny);
+  view.k = clampK(Math.min((W - pad * 2) / bw, (H - pad * 2) / bh));
+  view.ox = W / 2 - (b.minx + bw / 2) * view.k; view.oy = H / 2 - (b.miny + bh / 2) * view.k; draw();
+}
+
+/* ---------- exportar ---------- */
+let downloads = null;
+(async () => { try { downloads = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch (e) { downloads = null; } })();
+async function offer(filename, data) {
+  if (!downloads) {
+    // fora do Claude (arquivo aberto direto no navegador): download comum
+    try {
+      const blob = data instanceof Blob ? data : new Blob([data]);
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); return;
+    } catch (e) { $("expMsg").textContent = "Este aparelho não deixou salvar o arquivo aqui."; return; }
+  }
+  try { await downloads.save({ filename, data }); toast("Arquivo pronto"); }
+  catch (e) {
+    const c = e && e.code;
+    if (c === "declined") return;
+    if (c === "host_unavailable") $("expMsg").textContent = "O app do Claude no Android ainda não salva arquivos. Abra este croqui no navegador (Chrome) para salvar.";
+    else if (c === "rate_limited") $("expMsg").textContent = "Espere um instante e toque de novo.";
+    else $("expMsg").textContent = "Não foi possível salvar o arquivo aqui.";
+  }
+}
+function fileBase() {
+  const t = (S.title || "croqui").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-") || "croqui";
+  return t.slice(0, 60);
+}
+$("expJson").onclick = () => offer(fileBase() + ".json", JSON.stringify({ app: "croqui", v: 1, ...S }, null, 1));
+$("expOpen").onclick = () => $("fileOpen").click();
+$("fileOpen").onchange = e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const o = JSON.parse(r.result);
+      if (!o || !Array.isArray(o.walls)) throw 0;
+      snapshot();
+      S = { title: String(o.title || ""), walls: o.walls.filter(w => w && w.a && w.b).map(w => ({ id: typeof w.id === "string" ? w.id.slice(0, 40) : nid(), a: { x: +w.a.x, y: +w.a.y }, b: { x: +w.b.x, y: +w.b.y }, flip: !!w.flip, fixB: !!w.fixB, dim: !!w.dim, t: [0.1, 0.12, 0.15, 0.2].includes(+w.t) ? +w.t : 0.15 })),
+            lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
+            inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
+            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge })),
+            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })) };
+      closeSheets(); after(); fit(); toast("Projeto aberto");
+    } catch (err) { $("expMsg").textContent = "Esse arquivo não é um projeto do Croqui."; }
+    e.target.value = "";
+  };
+  r.readAsText(f);
+};
+$("expPng").onclick = () => {
+  const b = bounds(); if (!b) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; }
+  const blue = $("expBg").value === "blue";
+  const k = 80, pad = 1.6, scale = 2;
+  const bw = b.maxx - b.minx + pad * 2, bh = b.maxy - b.miny + pad * 2 + 0.8;
+  const cw = Math.min(6000, Math.round(bw * k * scale)), chh = Math.min(6000, Math.round(bh * k * scale));
+  const c = document.createElement("canvas"); c.width = cw; c.height = chh;
+  const g = c.getContext("2d"), f = cw / (bw * k * scale);
+  const save_ = { k: view.k, ox: view.ox, oy: view.oy, W, H, dpr };
+  const saveCol = { ...COL };
+  // reaproveita o desenho da tela num canvas maior
+  const kk = k * f;
+  view.k = kk; view.ox = (pad - b.minx) * kk; view.oy = (pad + 0.8 - b.miny) * kk;
+  W = cw / scale; H = chh / scale; dpr = scale;
+  if (!blue) Object.assign(COL, { bg: "#ffffff", grid1: "rgba(28,76,158,.06)", grid5: "rgba(28,76,158,.13)", wall: "#14306b", dim: "#14306b" });
+  const selSave = sel; sel = null;
+  drawTo(g);
+  // título
+  g.setTransform(scale, 0, 0, scale, 0, 0);
+  g.fillStyle = blue ? "#ffffff" : "#14306b"; g.font = "700 16px Inter, sans-serif"; g.textAlign = "left"; g.textBaseline = "top";
+  g.fillText(S.title || "Croqui", 16, 14);
+  g.font = "500 11px 'IBM Plex Mono', monospace"; g.fillStyle = blue ? "rgba(255,255,255,.75)" : "#4a5f88";
+  g.fillText("Medidas em metros · " + new Date().toLocaleDateString("pt-BR"), 16, 36);
+  Object.assign(view, { k: save_.k, ox: save_.ox, oy: save_.oy }); W = save_.W; H = save_.H; dpr = save_.dpr; Object.assign(COL, saveCol); sel = selSave;
+  draw();
+  c.toBlob(blob => { if (blob) offer(fileBase() + ".png", blob); }, "image/png");
+};
+function drawTo(g) {
+  // desenha usando a mesma rotina, trocando o contexto temporariamente
+  const orig = ctx; ctx = g; try { draw(); } finally { ctx = orig; }
+}
+$("expPdf").onclick = () => {
+  const b = bounds(); if (!b) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; }
+  if (!window.jspdf) { $("expMsg").textContent = "O gerador de PDF não carregou. Verifique a internet e tente de novo."; return; }
+  const sizes = [["a4", 297, 210], ["a3", 420, 297]];
+  const margin = 12, titleH = 22, cotaPad = 1.0; // m de folga para as cotas
+  const bw = b.maxx - b.minx + cotaPad * 2, bh = b.maxy - b.miny + cotaPad * 2;
+  const choice = $("expScale").value;
+  let pick = null;
+  const tryScale = s => {
+    const mm = 1000 / s;
+    for (const [nm, LW, LH] of sizes) for (const land of [true, false]) {
+      const pw = land ? LW : LH, ph = land ? LH : LW;
+      if (bw * mm <= pw - margin * 2 && bh * mm <= ph - margin * 2 - titleH) return { nm, pw, ph, land, s, mm };
+    } return null;
+  };
+  if (choice === "auto") { for (const s of [20, 25, 50, 75, 100, 125, 200, 250, 500, 1000]) { const r = tryScale(s); if (r && r.nm === "a4") { pick = r; break; } } if (!pick) for (const s of [50, 75, 100, 125, 200, 250, 500, 1000]) { pick = tryScale(s); if (pick) break; } }
+  else pick = tryScale(+choice);
+  if (!pick) { $("expMsg").textContent = "O desenho não cabe numa folha A3 na escala 1:" + choice + ". Escolha uma escala menor (número maior) ou \"Ajustar à folha\"."; return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: pick.land ? "landscape" : "portrait", unit: "mm", format: pick.nm });
+  const { pw, ph, mm } = pick;
+  const areaW = pw - margin * 2, areaH = ph - margin * 2 - titleH;
+  const ox = margin + (areaW - bw * mm) / 2 + (cotaPad - b.minx) * mm, oy = margin + (areaH - bh * mm) / 2 + (cotaPad - b.miny) * mm;
+  const P = p => ({ x: ox + p.x * mm, y: oy + p.y * mm });
+  doc.setDrawColor(20, 48, 107); doc.setTextColor(20, 48, 107);
+  doc.setLineWidth(0.3); doc.rect(margin / 2, margin / 2, pw - margin, ph - margin);
+  // terreno
+  if (S.lot) {
+    doc.setLineWidth(0.25); doc.setLineDashPattern([4, 1, 0.6, 1], 0);
+    S.lot.pts.forEach((_, i) => { const [a, b2] = lotSide(i); const A = P(a), B = P(b2); doc.line(A.x, A.y, B.x, B.y); });
+    doc.setLineDashPattern([], 0); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+    S.lot.pts.forEach((_, i) => {
+      const [a, b2] = lotSide(i), { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+      const lab = fmt(dist(a, b2)) + (sideRole(i) === "Frente" ? " - FRENTE" : ""), tw = doc.getTextWidth(lab), c = P(mul(add(a, b2), .5));
+      const cxy = { x: c.x + n.x * 2.6, y: c.y + n.y * 2.6 }, du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
+      doc.text(lab, cxy.x - du.x * tw / 2 + dn.x * 0.9, cxy.y - du.y * tw / 2 + dn.y * 0.9, { angle: -ang * 180 / Math.PI });
+    });
+  }
+  // paredes
+  doc.setLineCap("square"); doc.setLineJoin("miter");
+  for (const w of S.walls) { doc.setLineWidth(Math.max(0.35, TH(w) * mm)); const a = P(w.a), c2 = P(w.b); doc.line(a.x, a.y, c2.x, c2.y); }
+  doc.setDrawColor(255, 255, 255);
+  for (const w of S.walls) { const tw = TH(w) * mm - 0.5; if (tw < 0.3) continue; doc.setLineWidth(tw); const a = P(w.a), c2 = P(w.b); doc.line(a.x, a.y, c2.x, c2.y); }
+  doc.setDrawColor(20, 48, 107);
+  doc.setLineCap("butt");
+  // cotas
+  const cen = centroid(); doc.setLineWidth(0.15); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+  for (const w of S.walls) {
+    if (!showDim(w)) continue;
+    const { L, u, n, mid, ang } = dimInfo(w, cen);
+    const off = 2.6 + Math.max(0.35, TH(w) * mm) / 2, a = P(w.a), c2 = P(w.b);
+    const a2 = { x: a.x + n.x * off, y: a.y + n.y * off }, b2 = { x: c2.x + n.x * off, y: c2.y + n.y * off };
+    doc.line(a.x + n.x * (off - 1.2), a.y + n.y * (off - 1.2), a.x + n.x * (off + 0.8), a.y + n.y * (off + 0.8));
+    doc.line(c2.x + n.x * (off - 1.2), c2.y + n.y * (off - 1.2), c2.x + n.x * (off + 0.8), c2.y + n.y * (off + 0.8));
+    doc.line(a2.x, a2.y, b2.x, b2.y);
+    const t = { x: (u.x + n.x) * 0.7, y: (u.y + n.y) * 0.7 };
+    doc.line(a2.x - t.x, a2.y - t.y, a2.x + t.x, a2.y + t.y); doc.line(b2.x - t.x, b2.y - t.y, b2.x + t.x, b2.y + t.y);
+    const label = fmt(L), tw = doc.getTextWidth(label), pm = P(mid);
+    const cxy = { x: pm.x + n.x * (off + 1.6), y: pm.y + n.y * (off + 1.6) };
+    const du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
+    const sx = cxy.x - du.x * tw / 2 + dn.x * 0.9, sy = cxy.y - du.y * tw / 2 + dn.y * 0.9; // baseline
+    doc.text(label, sx, sy, { angle: -ang * 180 / Math.PI });
+  }
+  // pincel
+  doc.setLineCap("round"); doc.setLineJoin("round"); doc.setLineWidth(Math.max(0.2, INK_W * mm));
+  for (const k of S.inks) { const pts = k.pts.map(q => P({ x: q[0], y: q[1] })); for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); }
+  doc.setLineCap("butt");
+  // portas e janelas
+  for (const o of S.openings) {
+    const g = openGeom(o); if (!g) continue;
+    const p1 = P(g.p1), p2 = P(g.p2), tw = Math.max(0.35, g.t * mm), n = g.n;
+    doc.setDrawColor(255, 255, 255); doc.setLineCap("butt"); doc.setLineWidth(tw + 0.3); doc.line(p1.x, p1.y, p2.x, p2.y);
+    doc.setDrawColor(20, 48, 107); doc.setLineWidth(0.2);
+    for (const q of [p1, p2]) doc.line(q.x - n.x * tw / 2, q.y - n.y * tw / 2, q.x + n.x * tw / 2, q.y + n.y * tw / 2);
+    if (o.kind === "window") { for (const f of [-0.5, 0, 0.5]) { const off = f * tw * 0.7; doc.line(p1.x + n.x * off, p1.y + n.y * off, p2.x + n.x * off, p2.y + n.y * off); } }
+    else {
+      const h = P(g.hinge), lf = P(g.leaf); doc.setLineWidth(0.3); doc.line(h.x, h.y, lf.x, lf.y);
+      doc.setLineWidth(0.12); const ap = arcPts(g, 16).map(P); for (let i = 1; i < ap.length; i++) doc.line(ap[i - 1].x, ap[i - 1].y, ap[i].x, ap[i].y);
+    }
+  }
+  doc.setLineCap("butt");
+  // textos
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+  for (const t of S.texts) {
+    const p = P(t); doc.text(t.s, p.x, p.y + 1, { align: "center" });
+    const a = areaOf(t); if (a) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.text(fmt(a) + " m²", p.x, p.y + 4.4, { align: "center" }); doc.setFont("helvetica", "bold"); doc.setFontSize(8); }
+  }
+  // carimbo
+  const ty = ph - margin / 2 - titleH;
+  doc.setLineWidth(0.3); doc.line(margin / 2, ty, pw - margin / 2, ty);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(S.title || "Croqui", margin, ty + 6.5);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+  doc.text("Croqui sem valor de projeto", margin, ty + 11.5); doc.text("Medidas em metros", margin, ty + 16);
+  doc.text("Escala 1:" + pick.s + "  ·  Folha " + pick.nm.toUpperCase() + "  ·  " + new Date().toLocaleDateString("pt-BR"), pw - margin, ty + 6.5, { align: "right" });
+  // quadro de áreas
+  const ar = areasCalc(), qx = margin + 70;
+  doc.setFontSize(7.5);
+  const q1 = [ar.terreno ? "Terreno: " + fmt(ar.terreno) + " m²" : null, ar.construida ? "Construída: " + fmt(ar.construida) + " m²" : null, ar.ocupacao !== null ? "Ocupação: " + (ar.ocupacao * 100).toFixed(1).replace(".", ",") + "%" : null, ar.util ? "Cômodos: " + fmt(ar.util) + " m²" : null].filter(Boolean).join("   ·   ");
+  const q2 = ar.recuos.length ? "Recuos: " + ar.recuos.map(q => q.role.toLowerCase() + " " + fmt(q.d)).join("  ·  ") : "";
+  if (q1) { doc.setFont("helvetica", "bold"); doc.text("QUADRO DE ÁREAS", qx, ty + 6.5); doc.setFont("helvetica", "normal"); doc.text(q1, qx, ty + 11.5); }
+  if (q2) doc.text(q2, qx, ty + 16);
+  // escala gráfica 1 m / 5 m
+  const sbm = pick.s >= 200 ? 10 : (pick.s >= 100 ? 5 : 2), sbx = pw - margin - sbm * mm, sby = ty + 10.5;
+  doc.setLineWidth(0.25);
+  for (let i = 0; i < sbm; i++) { if (i % 2 === 0) doc.setFillColor(20, 48, 107); else doc.setFillColor(255, 255, 255); doc.rect(sbx + i * mm, sby, mm, 1.4, "FD"); }
+  doc.setFontSize(6.5); doc.text("0", sbx, sby + 4, { align: "center" }); doc.text(sbm + " m", sbx + sbm * mm, sby + 4, { align: "center" });
+  const out = doc.output("blob");
+  $("expMsg").textContent = "PDF na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
+  offer(fileBase() + ".pdf", out);
+};
+
+/* ---------- início ---------- */
+const saved = load();
+S = saved || EXAMPLE();
+if (!saved) setTimeout(() => toast("Este é um exemplo. Toque em Novo para começar o seu."), 600);
+new ResizeObserver(resize).observe(stage);
+resize(); fit(); updUndo();
+document.fonts && document.fonts.ready.then(draw);
+setTimeout(() => showHint("Risque as paredes à vontade. As medidas você indica depois, em Medida."), 100);
+})();
+</script>
+
+<script>
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>
