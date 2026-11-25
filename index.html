@@ -163,6 +163,10 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn primary" id="pickMove">Mover</button>
         <button class="btn" id="pickCopy">Copiar</button>
       </div>
+      <div id="pickLotBox" style="display:flex;flex-direction:column;gap:8px" hidden>
+        <span class="note">Recuos até a divisa do terreno (digite e a seleção anda):</span>
+        <div id="pickLot" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
       <div class="row" id="pickThick" role="group" aria-label="Espessura das paredes selecionadas">
         <span class="note" style="margin-right:4px">Espessura:</span>
         <button class="btn" data-t="0.10">10 cm</button><button class="btn" data-t="0.12">12 cm</button><button class="btn" data-t="0.15">15 cm</button><button class="btn" data-t="0.20">20 cm</button>
@@ -633,7 +637,7 @@ function setOpenW(v) {
 
 /* ---------- distâncias entre paredes (estilo Revit) ---------- */
 opt.face = false;
-function neighbors(w) {
+function neighbors(w, withLot) {
   const L = dist(w.a, w.b); if (L < 0.05) return [];
   const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x };
   const w0 = 0, w1 = L;
@@ -650,11 +654,20 @@ function neighbors(w) {
     if (d > 0) { if (cand.ov !== null) { if (!pos || d < pos.d) pos = cand; } else if (!posAny || d < posAny.d) posAny = cand; }
     else { if (cand.ov !== null) { if (!neg || d > neg.d) neg = cand; } else if (!negAny || d > negAny.d) negAny = cand; }
   }
+  if (S.lot && withLot !== false) S.lot.pts.forEach((_, i) => {
+    const [la, lb] = lotSide(i), ll = dist(la, lb); if (ll < 0.05) return;
+    const ux = mul(sub(lb, la), 1 / ll); if (Math.abs(u.x * ux.y - u.y * ux.x) > 1e-3) return;
+    const d = dot(sub(la, w.a), n); if (Math.abs(d) < 0.01) return;
+    const s0 = dot(sub(la, w.a), u), s1 = dot(sub(lb, w.a), u), lo = Math.max(w0, Math.min(s0, s1)), hi = Math.min(w1, Math.max(s0, s1));
+    const cand = { x: null, lot: i, d, ov: hi > lo + 0.01 ? (lo + hi) / 2 : null, s: (s0 + s1) / 2 };
+    if (d > 0) { if (cand.ov !== null) { if (!pos || d < pos.d) pos = cand; } else if (!posAny || d < posAny.d) posAny = cand; }
+    else { if (cand.ov !== null) { if (!neg || d > neg.d) neg = cand; } else if (!negAny || d > negAny.d) negAny = cand; }
+  });
   const out = [];
   for (const c of [pos || posAny, neg || negAny]) if (c) {
     const along = c.ov !== null ? c.ov : Math.max(w0, Math.min(w1, c.s));
-    const gap = Math.abs(c.d) - (opt.face ? (TH(w) + TH(c.x)) / 2 : 0);
-    out.push({ ...c, u, n, along, gap, side: sideName(mul(n, Math.sign(c.d))) });
+    const gap = Math.abs(c.d) - ((opt.face || !c.x) ? (TH(w) + (c.x ? TH(c.x) : 0)) / 2 : 0);
+    out.push({ ...c, u, n, along, gap, side: c.x ? "Até a parede " + sideName(mul(n, Math.sign(c.d))) : "Até a divisa (" + sideRole(c.lot).toLowerCase() + ")" });
   }
   return out;
 }
@@ -670,14 +683,14 @@ function renderDistRows(w) {
   $("wallDistBox").hidden = !nb.length;
   nb.forEach((c, i) => {
     const row = document.createElement("div"); row.className = "row";
-    const lab = document.createElement("span"); lab.className = "note"; lab.style.minWidth = "150px"; lab.textContent = "Até a parede " + c.side;
+    const lab = document.createElement("span"); lab.className = "note"; lab.style.minWidth = "150px"; lab.textContent = c.side;
     const f = document.createElement("label"); f.className = "field num"; f.style.maxWidth = "200px";
     const inp = document.createElement("input"); inp.id = "dist" + i; inp.inputMode = "decimal"; inp.autocomplete = "off"; inp.value = fmt(c.gap); inp.setAttribute("aria-label", lab.textContent);
     const un = document.createElement("span"); un.textContent = "m"; f.append(inp, un);
     const bt = document.createElement("button"); bt.className = "btn"; bt.textContent = "Mover parede";
     const go = () => {
       const v = parseLen(inp.value); if (v === null) { toast("Digite a distância em metros, ex.: 3,00"); return; }
-      const want = v + (opt.face ? (TH(w) + TH(c.x)) / 2 : 0);
+      const want = v + ((opt.face || !c.x) ? (TH(w) + (c.x ? TH(c.x) : 0)) / 2 : 0);
       const m = c.d - Math.sign(c.d) * want;
       snapshot(); moveWall(w, m, c.n); dropZero(); after(); selectWall(w); toast("Parede movida");
     };
@@ -685,13 +698,47 @@ function renderDistRows(w) {
     row.append(lab, f, bt); box.appendChild(row);
   });
 }
+function tempDim(A, B, label) {
+  const v = sub(B, A), L = len(v); if (L < 2) return;
+  const u = mul(v, 1 / L), nn = { x: -u.y, y: u.x };
+  ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.setLineDash([]);
+  const t = { x: (nn.x + u.x) * 4, y: (nn.y + u.y) * 4 };
+  ctx.beginPath(); for (const q of [A, B]) { ctx.moveTo(q.x - t.x, q.y - t.y); ctx.lineTo(q.x + t.x, q.y + t.y); } ctx.stroke();
+  const m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+  ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = COL.acc; ctx.fillRect(m.x - tw / 2 - 5, m.y - 9, tw + 10, 18);
+  ctx.fillStyle = "#1b2a44"; ctx.fillText(label, m.x, m.y);
+}
+// recuos do grupo selecionado até cada lado do terreno (do ponto da face mais perto)
+function groupLotDims() {
+  if (!S.lot || !multi.size) return [];
+  const ws = pickWalls(), pts = [];
+  for (const w of ws) { const f = wallFaces(w); for (const [a, b] of f.lines.concat(f.caps)) pts.push(a, b); if (!f.lines.length) pts.push(w.a, w.b); }
+  if (!pts.length) return [];
+  return S.lot.pts.map((_, i) => {
+    const [a] = lotSide(i), { n } = lotOutward(i); let best = null, bd = 1e9;
+    for (const p of pts) { const dd = dot(sub(a, p), n); if (dd < bd) { bd = dd; best = p; } }
+    return { i, d: bd, p: best, foot: add(best, mul(n, bd)), n, role: sideRole(i) };
+  });
+}
 function drawNeighborDims() {
+  if (exporting) return;
+  if (tool === "pick" && multi.size) {
+    for (const g of groupLotDims()) tempDim(toS(g.p), toS(g.foot), fmt(g.d));
+    if (multi.size === 1) { const w = pickWalls()[0]; if (w) for (const c of neighbors(w, false)) drawOneNeighbor(w, c); }
+    return;
+  }
   if (!sel || sel.type !== "wall" || tool !== "select") return;
   const w = S.walls.find(x => x.id === sel.id); if (!w) return;
-  for (const c of neighbors(w)) {
+  for (const c of neighbors(w)) drawOneNeighbor(w, c);
+}
+function drawOneNeighbor(w, c) {
+  {
     const p0 = add(w.a, mul(c.u, c.along)), p1 = add(p0, mul(c.n, c.d));
     let A = toS(p0), B = toS(p1);
-    if (opt.face) { const k1 = TH(w) / 2 * view.k * Math.sign(c.d), k2 = TH(c.x) / 2 * view.k * Math.sign(c.d); A = { x: A.x + c.n.x * k1, y: A.y + c.n.y * k1 }; B = { x: B.x - c.n.x * k2, y: B.y - c.n.y * k2 }; }
+    if (opt.face || !c.x) { const k1 = TH(w) / 2 * view.k * Math.sign(c.d), k2 = (c.x ? TH(c.x) : 0) / 2 * view.k * Math.sign(c.d); A = { x: A.x + c.n.x * k1, y: A.y + c.n.y * k1 }; B = { x: B.x - c.n.x * k2, y: B.y - c.n.y * k2 }; }
     ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
     ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.setLineDash([]);
     const t = { x: (c.n.x + c.u.x) * 4, y: (c.n.y + c.u.y) * 4 };
@@ -1329,7 +1376,24 @@ function showPick() {
   $("pickTitle").textContent = n === 1 ? "1 parede selecionada" : n + " paredes selecionadas";
   const ws = pickWalls(), t0 = TH(ws[0]), same = ws.every(w => Math.abs(TH(w) - t0) < 1e-6);
   document.querySelectorAll("#pickThick [data-t]").forEach(b => b.classList.toggle("on", same && Math.abs(t0 - +b.dataset.t) < 1e-6));
+  renderPickLot();
   $("sheetPick").hidden = false; draw();
+}
+function renderPickLot() {
+  const box = $("pickLot"); box.textContent = "";
+  const gs = groupLotDims(); $("pickLotBox").hidden = !gs.length;
+  const order = { "Frente": 0, "Lateral esquerda": 1, "Lateral direita": 2, "Fundo": 3 };
+  gs.sort((a, b) => (order[a.role] ?? 9) - (order[b.role] ?? 9)).forEach(g => {
+    const row = document.createElement("div"); row.className = "row";
+    const lab = document.createElement("span"); lab.className = "note"; lab.style.minWidth = "120px"; lab.textContent = g.role;
+    const f = document.createElement("label"); f.className = "field num"; f.style.maxWidth = "170px";
+    const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.autocomplete = "off"; inp.value = fmt(g.d); inp.setAttribute("aria-label", "Recuo " + g.role);
+    const un = document.createElement("span"); un.textContent = "m"; f.append(inp, un);
+    const bt = document.createElement("button"); bt.className = "btn"; bt.textContent = "Mover";
+    const go = () => { const v = parseLen(inp.value); if (v === null) { toast("Digite o recuo em metros, ex.: 1,50"); return; } const sh = mul(g.n, g.d - v); movePicked(clean(sh.x), clean(sh.y), false); toast(g.role + ": " + fmt(v) + " m"); };
+    bt.onclick = go; inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    row.append(lab, f, bt); box.appendChild(row);
+  });
 }
 function movePicked(dx, dy, copy) {
   const ws = pickWalls(); if (!ws.length) return;
