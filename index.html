@@ -85,6 +85,29 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 @media (max-width:560px){.hide-sm{display:none}.btn{padding:0 10px}.brand small{display:none}}
 @media (min-width:900px){.sheet{left:auto;top:12px;bottom:auto;right:max(12px,env(safe-area-inset-right,0px));width:390px;border:1px solid var(--line);border-radius:16px;max-height:calc(100% - 24px);box-shadow:0 10px 30px rgba(0,0,0,.3)}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.tabs{display:flex;gap:2px;background:var(--paper-deep);border:1px solid var(--line);border-radius:10px;padding:3px}
+.tab{min-height:32px;padding:0 12px;border-radius:7px;border:0;background:transparent;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink-soft)}
+.tab.on{background:var(--ink);color:var(--chrome)}
+.sk-on header>*:not(.brand):not(.tabs):not(#btnExport){display:none!important}
+.sk-on nav.tools{display:none}
+.sk{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--paper-deep);z-index:5}
+.sk-top{display:flex;gap:6px;align-items:center;padding:8px 12px;overflow-x:auto;border-bottom:1px solid var(--line);background:var(--chrome)}
+.sk-top .pg{min-height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--chrome-2);cursor:pointer;font-size:13px;white-space:nowrap}
+.sk-top .pg.on{background:var(--accent);color:#1b2a44;border-color:var(--accent);font-weight:600}
+.sk-top .sp{flex:1}
+.sk-wrap{position:relative;flex:1;min-height:0}
+.sk-bar{display:flex;gap:4px;align-items:center;overflow-x:auto;background:var(--chrome);border-top:1px solid var(--line);
+  padding:6px max(8px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px))}
+.sk-bar .tool{flex:none}
+.sk-sep{width:1px;align-self:stretch;background:var(--line);margin:0 4px;flex:none}
+.sw{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);cursor:pointer;flex:none;padding:0}
+.sw.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--chrome),0 0 0 4px var(--ink)}
+.wd{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--chrome-2);cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
+.wd i{display:block;background:var(--ink);border-radius:9px;width:16px}
+.wd.on{border-color:var(--accent);background:var(--paper)}
+.sk-ask{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;gap:6px;background:var(--chrome);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:3;width:min(360px,calc(100% - 32px))}
+.sk-ask input{flex:1;min-width:0;min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--paper-deep);padding:0 10px;user-select:text;-webkit-user-select:text}
 </style>
 
 <div class="app">
@@ -93,6 +116,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <svg width="34" height="22" viewBox="-70 -474 187 118" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M38.9329 -471.3195 L-5.0374 -413.3646 L-12.6577 -424.6843 L-68.0000 -358.0706 L114.3261 -358.0706 L38.9329 -471.3195 Z M32.2305 -378.4758 L42.2579 -423.7343 L30.3023 -416.4924 L39.3354 -455.9583 L65.5655 -416.5689 L32.2305 -378.4718 L32.2305 -378.4758 Z"/></svg>
       Croqui <small>medidas em metros</small>
     </div>
+    <div class="tabs" role="tablist" aria-label="Páginas do projeto"><button class="tab on" id="tabPlan" role="tab">Planta</button><button class="tab" id="tabSk" role="tab">Rascunho</button></div>
     <button class="btn on" id="optOrtho" title="Prender a linha em 0°, 45° e 90°">∠ <span>45/90°</span></button>
     <label class="btn" title="Espessura das paredes novas">▮ <select id="optThick" aria-label="Espessura da parede" style="background:transparent;border:0;outline:0;font-weight:600">
       <option value="0.10">10 cm</option><option value="0.12">12 cm</option><option value="0.15" selected>15 cm</option><option value="0.20">20 cm</option></select></label>
@@ -109,6 +133,33 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 
   <div class="stage" id="stage">
     <canvas id="cv"></canvas>
+    <div class="sk" id="sk" hidden>
+      <div class="sk-top"><div id="skPages" style="display:flex;gap:6px"></div><button class="pg" id="skAdd" title="Nova folha de rascunho">+ Folha</button><span class="sp"></span>
+        <button class="pg" id="skRot" title="Folha em pé ou deitada">Girar folha</button><button class="pg" id="skRen">Renomear</button><button class="pg" id="skDelPg" style="color:var(--danger)">Excluir folha</button></div>
+      <div class="sk-wrap" id="skWrap"><canvas id="skc"></canvas>
+        <div class="sk-ask" id="skAsk" hidden><input id="skIn" maxlength="60" autocomplete="off"><button class="btn primary" id="skOk">OK</button><button class="btn" id="skNo">×</button></div></div>
+      <div class="sk-bar">
+        <button class="tool on" data-sk="pen" title="Caneta livre"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.5 2.5l3 3L10 17l-4 1 1-4z"/></svg>Caneta</button>
+        <button class="tool" data-sk="line" title="Linha reta (prende em 0°, 45° e 90°)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20L20 4"/></svg>Linha</button>
+        <button class="tool" data-sk="rect" title="Retângulo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12"/></svg>Retângulo</button>
+        <button class="tool" data-sk="dim" title="Cota: arraste e escreva a medida (ex.: pé-direito 2,80)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16M4 8v8M20 8v8"/></svg>Cota</button>
+        <button class="tool" data-sk="txt" title="Texto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 6h14M12 6v13"/></svg>Texto</button>
+        <button class="tool" data-sk="erase" title="Borracha: toque ou passe no traço"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H9L4 15l9-9 7 7-6 6"/></svg>Borracha</button>
+        <span class="sk-sep"></span>
+        <button class="sw on" data-c="w" style="background:#fff" aria-label="Branco"></button>
+        <button class="sw" data-c="y" style="background:#ffcf4a" aria-label="Amarelo"></button>
+        <button class="sw" data-c="r" style="background:#ff8a80" aria-label="Vermelho"></button>
+        <span class="sk-sep"></span>
+        <button class="wd" data-w="1" aria-label="Traço fino"><i style="height:2px"></i></button>
+        <button class="wd on" data-w="2" aria-label="Traço médio"><i style="height:4px"></i></button>
+        <button class="wd" data-w="4" aria-label="Traço grosso"><i style="height:7px"></i></button>
+        <span class="sk-sep"></span>
+        <button class="tool" id="skUndo" title="Desfazer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Desfazer</button>
+        <button class="tool" id="skRedo" title="Refazer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>Refazer</button>
+        <button class="tool" id="skFit" title="Enquadrar a folha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Enquadrar</button>
+        <button class="tool" id="skClear" title="Apagar tudo desta folha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Limpar</button>
+      </div>
+    </div>
     <div class="hint" id="hint">Risque as paredes à vontade. As medidas você indica depois, em Medida.</div>
     <div class="scalebar" id="scalebar"><span>1 m</span><i id="scalebarI" style="width:60px"></i></div>
     <div class="zoomctl">
@@ -386,7 +437,8 @@ let ctx = cv.getContext("2d");
 const STORE = "croqui-anderson-v1";
 
 /* ---------- estado ---------- */
-let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], lot: null, title: "" };
+let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], sk: [], lot: null, title: "" };
+var skOn = false, skDraw = () => {};
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
 const view = { k: 50, ox: 0, oy: 0 };          // tela = mundo(m) * k + o
@@ -426,14 +478,14 @@ const EXAMPLE = () => {
 
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
+  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
   return null;
 }
 function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
 function undo() { if (!hist.length) return; redoStack.push(JSON.stringify(S)); S = JSON.parse(hist.pop()); closeSheets(); after(); }
 function redo() { if (!redoStack.length) return; hist.push(JSON.stringify(S)); S = JSON.parse(redoStack.pop()); closeSheets(); after(); }
 function updUndo() { $("undo").disabled = !hist.length; $("redo").disabled = !redoStack.length; }
-function after() { save(); updUndo(); draw(); }
+function after() { save(); updUndo(); draw(); if (skOn) skDraw(); }
 
 /* ---------- geometria ---------- */
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
@@ -2242,7 +2294,7 @@ $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk();
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
-$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], lot: null, title: "" }; multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], sk: [], lot: null, title: "" }; multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
 $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
@@ -2277,6 +2329,7 @@ function toast(m) { const t = $("toast"); t.textContent = m; t.hidden = false; c
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") { if (e.key === "Escape") closeSheets(); return; }
   const k = e.key.toLowerCase();
+  if (skOn && !((e.ctrlKey || e.metaKey) && (k === "z" || k === "y"))) return;
   if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
   else if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
   else if (k === "escape") { if (tool === "pick") multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); }
@@ -2346,7 +2399,8 @@ $("fileOpen").onchange = e => {
             openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
             dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
-            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })) };
+            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
+            sk: skClean(o.sk) };
       closeSheets(); after(); fit(); toast("Projeto aberto");
     } catch (err) { $("expMsg").textContent = "Esse arquivo não é um projeto do Croqui."; }
     e.target.value = "";
@@ -2515,15 +2569,208 @@ $("expPdf").onclick = () => {
   doc.setLineWidth(0.25);
   for (let i = 0; i < sbm; i++) { if (i % 2 === 0) doc.setFillColor(20, 48, 107); else doc.setFillColor(255, 255, 255); doc.rect(sbx + i * mm, sby, mm, 1.4, "FD"); }
   doc.setFontSize(6.5); doc.text("0", sbx, sby + 4, { align: "center" }); doc.text(sbm + " m", sbx + sbm * mm, sby + 4, { align: "center" });
+  const nsk = skPdf(doc);
   const out = doc.output("blob");
-  $("expMsg").textContent = "PDF na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
+  $("expMsg").textContent = (nsk ? "PDF com a planta e " + nsk + (nsk > 1 ? " folhas" : " folha") + " de rascunho. Planta" : "PDF") + " na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
   offer(fileBase() + ".pdf", out);
 };
+
+/* ---------- rascunho (folhas de anotação à mão, junto do projeto) ---------- */
+let SKW = 1000, SKH = 707; // folha A4 (deitada ou em pé), em unidades da folha
+const skDims = p => p && p.o === "p" ? [707, 1000] : [1000, 707];
+const SKC = { w: "#ffffff", y: "#ffcf4a", r: "#ff8a80" };
+const SKPDF = { w: [20, 48, 107], y: [196, 120, 0], r: [200, 40, 40] };
+const skc = $("skc"); let skx = skc.getContext("2d");
+let skPage = 0, skTool = "pen", skCol = "w", skW = 2, skCur = null, skV = { k: 1, ox: 0, oy: 0 }, skVfit = true, skAskCb = null;
+const skPtr = new Map(); let skPinch = null, skEraseHit = false;
+function skClean(a) {
+  const P2 = q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1]) ? [Math.max(-500, Math.min(1500, +q[0])), Math.max(-500, Math.min(1200, +q[1]))] : null;
+  return (Array.isArray(a) ? a : []).slice(0, 30).filter(p => p && Array.isArray(p.items)).map((p, i) => ({
+    id: nid(), nm: String(p.nm || "Rascunho " + (i + 1)).slice(0, 40), ...(p.o === "p" ? { o: "p" } : {}),
+    items: p.items.slice(0, 5000).map(it => {
+      if (!it || !["pen", "line", "rect", "dim", "txt"].includes(it.t)) return null;
+      const o = { t: it.t, c: SKC[it.c] ? it.c : "w", w: [1, 2, 4].includes(+it.w) ? +it.w : 2 };
+      if (it.t === "pen") { o.pts = (Array.isArray(it.pts) ? it.pts : []).map(P2).filter(Boolean).slice(0, 4000); return o.pts.length ? o : null; }
+      if (it.t === "txt") { const p = P2([it.x, it.y]); if (!p || typeof it.s !== "string") return null; o.x = p[0]; o.y = p[1]; o.s = it.s.slice(0, 60); return o; }
+      o.a = P2(it.a); o.b = P2(it.b); if (!o.a || !o.b) return null; if (it.t === "dim") o.s = String(it.s || "").slice(0, 60); return o;
+    }).filter(Boolean)
+  }));
+}
+function skPg() { if (!S.sk.length) return null; skPage = Math.max(0, Math.min(skPage, S.sk.length - 1)); const pg = S.sk[skPage], [w, h] = skDims(pg); if (w !== SKW) { SKW = w; SKH = h; skFitV(); } return pg; }
+const skNewO = () => (skc._h || 1) > (skc._w || 1) * 1.1 ? { o: "p" } : {};
+function skEnsure() { if (!S.sk.length) { S.sk.push({ id: nid(), nm: "Rascunho 1", ...skNewO(), items: [] }); skPage = 0; } return skPg(); }
+function skSize() {
+  const r = $("skWrap").getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 3);
+  skc.width = Math.round(r.width * d); skc.height = Math.round(r.height * d); skc._d = d; skc._w = r.width; skc._h = r.height;
+  if (skVfit) skFitV();
+}
+function skFitV() { const w = skc._w || 1, h = skc._h || 1, k = Math.min((w - 24) / SKW, (h - 24) / SKH); skV = { k, ox: (w - SKW * k) / 2, oy: (h - SKH * k) / 2 }; skVfit = true; }
+const skS = p => ({ x: p[0] * skV.k + skV.ox, y: p[1] * skV.k + skV.oy });
+const skP = e => { const r = skc.getBoundingClientRect(); return [(e.clientX - r.left - skV.ox) / skV.k, (e.clientY - r.top - skV.oy) / skV.k]; };
+function skItem(g, it, k, map, col) {
+  const c = col(it.c); g.strokeStyle = c; g.fillStyle = c; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = Math.max(0.6, it.w * 1.3 * k);
+  if (it.t === "pen") {
+    const q = it.pts.map(map); g.beginPath(); g.moveTo(q[0].x, q[0].y);
+    if (q.length === 1) g.lineTo(q[0].x + 0.1, q[0].y);
+    for (let i = 1; i < q.length - 1; i++) { const m = { x: (q[i].x + q[i + 1].x) / 2, y: (q[i].y + q[i + 1].y) / 2 }; g.quadraticCurveTo(q[i].x, q[i].y, m.x, m.y); }
+    if (q.length > 1) g.lineTo(q[q.length - 1].x, q[q.length - 1].y); g.stroke(); return;
+  }
+  if (it.t === "txt") { const p = map([it.x, it.y]); g.font = "600 " + (it.w * 6 + 12) * k + "px " + getComputedStyle(document.body).getPropertyValue("--font-ui"); g.textAlign = "left"; g.textBaseline = "middle"; g.fillText(it.s, p.x, p.y); return; }
+  const a = map(it.a), b = map(it.b);
+  if (it.t === "line") { g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); return; }
+  if (it.t === "rect") { g.beginPath(); g.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y)); g.stroke(); return; }
+  if (it.t === "dim") {
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, t = 7 * k;
+    g.lineWidth = Math.max(0.5, 1.1 * k);
+    g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y);
+    for (const p of [a, b]) { g.moveTo(p.x - (ux - uy) * t * 0.7, p.y - (uy + ux) * t * 0.7); g.lineTo(p.x + (ux - uy) * t * 0.7, p.y + (uy + ux) * t * 0.7); g.moveTo(p.x - uy * t * 1.3, p.y + ux * t * 1.3); g.lineTo(p.x + uy * t * 1.3, p.y - ux * t * 1.3); }
+    g.stroke();
+    if (it.s) {
+      let ang = Math.atan2(dy, dx); if (ang > Math.PI / 2 + 0.01) ang -= Math.PI; if (ang < -Math.PI / 2 + 0.01) ang += Math.PI;
+      g.save(); g.translate((a.x + b.x) / 2, (a.y + b.y) / 2); g.rotate(ang);
+      g.font = "600 " + 15 * k + "px " + getComputedStyle(document.body).getPropertyValue("--font-num"); g.textAlign = "center"; g.textBaseline = "bottom"; g.fillText(it.s, 0, -4 * k); g.restore();
+    }
+  }
+}
+skDraw = function () {
+  if (!skOn) return;
+  const g = skx, d = skc._d || 1, W2 = skc._w, H2 = skc._h; g.setTransform(d, 0, 0, d, 0, 0);
+  g.fillStyle = "#143b7f"; g.fillRect(0, 0, W2, H2);
+  const k = skV.k, o = skS([0, 0]);
+  g.fillStyle = COL.bg; g.fillRect(o.x, o.y, SKW * k, SKH * k);
+  g.save(); g.beginPath(); g.rect(o.x, o.y, SKW * k, SKH * k); g.clip();
+  for (let i = 0; i <= SKW; i += 25) { g.strokeStyle = i % 125 ? COL.grid1 : COL.grid5; g.lineWidth = 1; g.beginPath(); g.moveTo(o.x + i * k, o.y); g.lineTo(o.x + i * k, o.y + SKH * k); g.stroke(); }
+  for (let j = 0; j <= SKH; j += 25) { g.strokeStyle = j % 125 ? COL.grid1 : COL.grid5; g.lineWidth = 1; g.beginPath(); g.moveTo(o.x, o.y + j * k); g.lineTo(o.x + SKW * k, o.y + j * k); g.stroke(); }
+  const pg = skPg(), col = c => SKC[c];
+  if (pg) for (const it of pg.items) skItem(g, it, k, skS, col);
+  if (skCur && skCur.t !== "erase") skItem(g, skCur, k, skS, col);
+  g.restore();
+  g.strokeStyle = "rgba(255,255,255,.35)"; g.lineWidth = 1; g.strokeRect(o.x, o.y, SKW * k, SKH * k);
+  const box = $("skPages"); box.innerHTML = "";
+  S.sk.forEach((p, i) => { const b = document.createElement("button"); b.className = "pg" + (i === skPage ? " on" : ""); b.textContent = p.nm; b.onclick = () => { skPage = i; skPg(); skFitV(); skDraw(); }; box.appendChild(b); });
+  $("skRen").hidden = $("skDelPg").hidden = $("skRot").hidden = !S.sk.length;
+  $("skUndo").disabled = !hist.length; $("skRedo").disabled = !redoStack.length;
+};
+function skSet(on) {
+  skOn = on; document.body.classList.toggle("sk-on", on);
+  $("sk").hidden = !on; $("tabPlan").classList.toggle("on", !on); $("tabSk").classList.toggle("on", on);
+  $("tabPlan").setAttribute("aria-selected", !on); $("tabSk").setAttribute("aria-selected", on);
+  if (on) { closeSheets(); skSize(); skEnsure(); save(); skFitV(); skDraw(); } else { skAskClose(); resize(); }
+}
+$("tabPlan").onclick = () => skSet(false);
+$("tabSk").onclick = () => skSet(true);
+new ResizeObserver(() => { if (skOn) { skSize(); skDraw(); } }).observe($("skWrap"));
+document.querySelectorAll("[data-sk]").forEach(b => b.onclick = () => { skTool = b.dataset.sk; document.querySelectorAll("[data-sk]").forEach(x => x.classList.toggle("on", x === b)); skAskClose(); });
+document.querySelectorAll(".sw").forEach(b => b.onclick = () => { skCol = b.dataset.c; document.querySelectorAll(".sw").forEach(x => x.classList.toggle("on", x === b)); });
+document.querySelectorAll(".wd").forEach(b => b.onclick = () => { skW = +b.dataset.w; document.querySelectorAll(".wd").forEach(x => x.classList.toggle("on", x === b)); });
+$("skUndo").onclick = () => undo(); $("skRedo").onclick = () => redo();
+$("skFit").onclick = () => { skFitV(); skDraw(); };
+$("skClear").onclick = () => { const pg = skPg(); if (!pg || !pg.items.length) return; snapshot(); pg.items = []; after(); toast("Folha limpa. Desfazer traz de volta."); };
+$("skAdd").onclick = () => { snapshot(); S.sk.push({ id: nid(), nm: "Rascunho " + (S.sk.length + 1), ...skNewO(), items: [] }); skPage = S.sk.length - 1; skPg(); skFitV(); after(); };
+$("skDelPg").onclick = () => { if (!S.sk.length) return; snapshot(); S.sk.splice(skPage, 1); skEnsure(); after(); toast("Folha excluída. Desfazer traz de volta."); };
+$("skRot").onclick = () => {
+  const pg = skPg(); if (!pg) return; snapshot();
+  if (pg.o === "p") delete pg.o; else pg.o = "p"; const [w1, h1] = skDims(pg);
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; const each = f => { for (const it of pg.items) { if (it.pts) it.pts = it.pts.map(f); if (it.a) { it.a = f(it.a); it.b = f(it.b); } if (it.t === "txt") [it.x, it.y] = f([it.x, it.y]); } };
+  each(q => { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); return q; });
+  if (x1 >= x0) { const f = Math.min(1, (w1 - 40) / Math.max(1, x1 - x0), (h1 - 40) / Math.max(1, y1 - y0)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; each(q => [+(w1 / 2 + (q[0] - cx) * f).toFixed(1), +(h1 / 2 + (q[1] - cy) * f).toFixed(1)]); }
+  skPg(); skFitV(); after(); toast(pg.o === "p" ? "Folha em pé" : "Folha deitada");
+};
+$("skRen").onclick = () => { const pg = skPg(); if (!pg) return; skAsk(pg.nm, "Nome da folha (ex.: Corte AA)", v => { if (v) { snapshot(); pg.nm = v.slice(0, 40); after(); } }); };
+function skAsk(val, ph, cb) { skAskCb = cb; $("skIn").value = val; $("skIn").placeholder = ph; $("skAsk").hidden = false; setTimeout(() => { $("skIn").focus(); $("skIn").select(); }, 30); }
+function skAskClose() { $("skAsk").hidden = true; skAskCb = null; }
+$("skOk").onclick = () => { const cb = skAskCb, v = $("skIn").value.trim(); skAskClose(); cb && cb(v); };
+$("skNo").onclick = () => { const cb = skAskCb; skAskClose(); cb && cb(null); };
+$("skIn").addEventListener("keydown", e => { if (e.key === "Enter") $("skOk").click(); else if (e.key === "Escape") $("skNo").click(); e.stopPropagation(); });
+function skSnapPt(p, skip) { // gruda nas pontas de linhas já desenhadas
+  const pg = skPg(), r = 10 / skV.k; let best = null, bd = r;
+  if (pg) for (const it of pg.items) { if (it === skip || !it.a) continue; const ends = it.t === "rect" ? [it.a, it.b, [it.a[0], it.b[1]], [it.b[0], it.a[1]]] : [it.a, it.b]; for (const q of ends) { const dd = Math.hypot(q[0] - p[0], q[1] - p[1]); if (dd < bd) { bd = dd; best = q; } } }
+  return best ? [best[0], best[1]] : p;
+}
+function skOrtho(a, b) { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), ang = Math.atan2(dy, dx), st = Math.PI / 4, s = Math.round(ang / st) * st; return Math.abs(ang - s) < 0.12 ? [a[0] + Math.cos(s) * L, a[1] + Math.sin(s) * L] : b; }
+function skDist(p, it) {
+  const sd = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; let t = L ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1]); };
+  if (it.t === "pen") { let m = 1e9; for (let i = 0; i < it.pts.length; i++) m = Math.min(m, sd(it.pts[i], it.pts[Math.min(i + 1, it.pts.length - 1)])); return m; }
+  if (it.t === "txt") { const w = it.s.length * (it.w * 6 + 12) * 0.6, h = (it.w * 6 + 12); return p[0] >= it.x - 4 && p[0] <= it.x + w && Math.abs(p[1] - it.y) <= h / 2 + 4 ? 0 : 1e9; }
+  if (it.t === "rect") { const [a, b] = [it.a, it.b], c = [a[0], b[1]], d = [b[0], a[1]]; return Math.min(sd(a, d), sd(d, b), sd(b, c), sd(c, a)); }
+  return sd(it.a, it.b);
+}
+function skEraseAt(p) { const pg = skPg(); if (!pg) return; const r = 12 / skV.k, n = pg.items.length; const keep = pg.items.filter(it => skDist(p, it) > r + it.w); if (keep.length !== n) { if (!skEraseHit) { snapshot(); skEraseHit = true; } pg.items = keep; skDraw(); } }
+skc.addEventListener("pointerdown", e => {
+  e.preventDefault(); skc.setPointerCapture(e.pointerId); skPtr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (skPtr.size === 2) { skCur = null; const [p1, p2] = [...skPtr.values()]; skPinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y), cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, v: { ...skV } }; skDraw(); return; }
+  if (skPtr.size > 2 || e.button === 1 || e.button === 2) { skPinch = skPinch || { pan: true, x: e.clientX, y: e.clientY, v: { ...skV } }; return; }
+  if (!$("skAsk").hidden) { $("skNo").click(); return; }
+  const pg = skEnsure(), p = skP(e);
+  if (skTool === "pen") skCur = { t: "pen", c: skCol, w: skW, pts: [[+p[0].toFixed(1), +p[1].toFixed(1)]] };
+  else if (skTool === "line" || skTool === "rect" || skTool === "dim") { const a = skSnapPt(p); skCur = { t: skTool, c: skCol, w: skW, a, b: a.slice() }; }
+  else if (skTool === "erase") { skEraseHit = false; skCur = { t: "erase" }; skEraseAt(p); }
+  else if (skTool === "txt") skAsk("", "Escreva a anotação (ex.: PÉ-DIREITO 2,80)", v => { if (v) { snapshot(); pg.items.push({ t: "txt", c: skCol, w: skW, x: p[0], y: p[1], s: v.slice(0, 60) }); after(); } });
+  skDraw();
+});
+skc.addEventListener("pointermove", e => {
+  if (!skPtr.has(e.pointerId)) return; skPtr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (skPinch) {
+    const r = skc.getBoundingClientRect();
+    if (skPinch.pan) { skV = { ...skPinch.v, ox: skPinch.v.ox + e.clientX - skPinch.x, oy: skPinch.v.oy + e.clientY - skPinch.y }; }
+    else if (skPtr.size >= 2) { const [p1, p2] = [...skPtr.values()], dd = Math.hypot(p1.x - p2.x, p1.y - p2.y), f = Math.max(0.3, Math.min(8, dd / (skPinch.d || 1))), k = Math.max(0.2, Math.min(12, skPinch.v.k * f)), cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
+      const wx = (skPinch.cx - r.left - skPinch.v.ox) / skPinch.v.k, wy = (skPinch.cy - r.top - skPinch.v.oy) / skPinch.v.k; skV = { k, ox: cx - r.left - wx * k, oy: cy - r.top - wy * k }; }
+    skVfit = false; skDraw(); return;
+  }
+  if (!skCur) return; const p = skP(e);
+  if (skCur.t === "pen") { const l = skCur.pts[skCur.pts.length - 1]; if (Math.hypot(p[0] - l[0], p[1] - l[1]) * skV.k > 1.5) skCur.pts.push([+p[0].toFixed(1), +p[1].toFixed(1)]); }
+  else if (skCur.t === "erase") { skEraseAt(p); return; }
+  else { let b = skSnapPt(p); if (b === p || (b[0] === p[0] && b[1] === p[1])) b = skCur.t === "rect" ? p : skOrtho(skCur.a, p); skCur.b = b; }
+  skDraw();
+});
+function skUp(e) {
+  skPtr.delete(e.pointerId);
+  if (skPinch) { if (skPtr.size === 0) skPinch = null; return; }
+  const it = skCur; skCur = null; if (!it) return;
+  if (it.t === "erase") { if (skEraseHit) after(); return; }
+  const pg = skPg(); if (!pg) return;
+  if (it.t !== "pen" && Math.hypot(it.b[0] - it.a[0], it.b[1] - it.a[1]) * skV.k < 6) { skDraw(); return; }
+  if (it.t === "dim") { skDraw(); skItem(skx, it, skV.k, skS, c => SKC[c]); skAsk("", "Medida (ex.: 2,80)", v => { if (v !== null) { snapshot(); it.s = v; pg.items.push(it); after(); } else skDraw(); }); return; }
+  snapshot(); pg.items.push(it); after();
+}
+skc.addEventListener("pointerup", skUp); skc.addEventListener("pointercancel", skUp);
+skc.addEventListener("contextmenu", e => e.preventDefault());
+skc.addEventListener("wheel", e => { e.preventDefault(); const r = skc.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, f = Math.exp(-e.deltaY * 0.0015), k = Math.max(0.2, Math.min(12, skV.k * f)); skV = { k, ox: mx - (mx - skV.ox) * k / skV.k, oy: my - (my - skV.oy) * k / skV.k }; skVfit = false; skDraw(); }, { passive: false });
+function skPdf(doc) { // uma página A4 deitada por folha de rascunho com algum traço
+  let n = 0;
+  for (const pg of S.sk || []) {
+    if (!pg.items.length) continue; n++;
+    const [PW, PH] = skDims(pg), land = PW > PH, aw = land ? 297 : 210, ah = land ? 210 : 297;
+    doc.addPage("a4", land ? "landscape" : "portrait");
+    const m = 12, k = Math.min((aw - m * 2) / PW, (ah - m * 2 - 8) / PH), ox = (aw - PW * k) / 2, oy = m + 8;
+    doc.setTextColor(20, 48, 107); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text((S.title ? S.title + "  ·  " : "") + pg.nm, m, m + 3);
+    doc.setDrawColor(20, 48, 107); doc.setLineWidth(0.3); doc.rect(ox, oy, PW * k, PH * k);
+    for (const it of pg.items) {
+      const c = SKPDF[it.c] || SKPDF.w; doc.setDrawColor(...c); doc.setTextColor(...c); doc.setLineWidth(Math.max(0.15, it.w * 1.3 * k)); doc.setLineCap && doc.setLineCap("round"); doc.setLineJoin && doc.setLineJoin("round");
+      const M = p => [ox + p[0] * k, oy + p[1] * k];
+      if (it.t === "pen") { const q = it.pts.map(M); if (q.length === 1) q.push([q[0][0] + 0.05, q[0][1]]); doc.lines(q.slice(1).map((p, i) => [p[0] - q[i][0], p[1] - q[i][1]]), q[0][0], q[0][1], [1, 1], "S", false); }
+      else if (it.t === "txt") { const [x, y] = M([it.x, it.y]); doc.setFont("helvetica", "bold"); doc.setFontSize((it.w * 6 + 12) * k * 2.83); doc.text(it.s, x, y, { baseline: "middle" }); }
+      else if (it.t === "line") { const a = M(it.a), b = M(it.b); doc.line(a[0], a[1], b[0], b[1]); }
+      else if (it.t === "rect") { const a = M(it.a), b = M(it.b); doc.rect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); }
+      else if (it.t === "dim") {
+        const a = M(it.a), b = M(it.b), dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, t = 7 * k;
+        doc.setLineWidth(0.2); doc.line(a[0], a[1], b[0], b[1]);
+        for (const p of [a, b]) { doc.line(p[0] - (ux - uy) * t * 0.7, p[1] - (uy + ux) * t * 0.7, p[0] + (ux - uy) * t * 0.7, p[1] + (uy + ux) * t * 0.7); doc.line(p[0] - uy * t * 1.3, p[1] + ux * t * 1.3, p[0] + uy * t * 1.3, p[1] - ux * t * 1.3); }
+        if (it.s) { let ang = Math.atan2(dy, dx); if (ang > Math.PI / 2 + 0.01) ang -= Math.PI; if (ang < -Math.PI / 2 + 0.01) ang += Math.PI;
+          const off = 4 * k + 0.4, cx = (a[0] + b[0]) / 2 + Math.sin(ang) * off, cy = (a[1] + b[1]) / 2 - Math.cos(ang) * off;
+          doc.setFont("courier", "bold"); doc.setFontSize(15 * k * 2.83); const tw = doc.getTextWidth(it.s); doc.text(it.s, cx - Math.cos(ang) * tw / 2, cy - Math.sin(ang) * tw / 2, { angle: -ang * 180 / Math.PI }); }
+      }
+    }
+  }
+  doc.setPage && doc.setPage(1);
+  return n;
+}
+window.__sk = { set: skSet, get V() { return skV; }, get page() { return skPage; } };
 
 /* ---------- início ---------- */
 window.__cq = { get S() { return S; }, view, toS: p => toS(p) };
 const saved = load();
-S = saved || EXAMPLE();
+S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
 if (!saved) setTimeout(() => toast("Este é um exemplo. Toque em Novo para começar o seu."), 600);
 new ResizeObserver(resize).observe(stage);
