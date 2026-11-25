@@ -313,7 +313,7 @@ let S = { walls: [], texts: [], openings: [], inks: [], dims: [], lot: null, tit
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
 const view = { k: 50, ox: 0, oy: 0 };          // tela = mundo(m) * k + o
-const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "face", lenRef: null };
+const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "face", lenRef: null, faceAlign: true };
 const multi = new Set();   // paredes da ferramenta Selecionar
 let msr = { a: null, b: null, hover: null };
 const showDim = w => opt.allDims || !!w.dim;
@@ -1141,6 +1141,36 @@ function inside(p, poly) {
 }
 
 /* ---------- interação ---------- */
+/* ---------- parede nova emendada em outra de espessura diferente: alinha pela face de fora ---------- */
+function outwardOf(w) {
+  // lado "de fora" da parede: para onde um raio saindo do meio não bate em outra parede; senão, o lado longe do centro
+  const L = dist(w.a, w.b), u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x }, mid = mul(add(w.a, w.b), .5);
+  const free = d => !S.walls.some(x => x !== w && rayHit(add(mid, mul(d, 0.01)), d, x.a, x.b));
+  const fp = free(n), fn = free(mul(n, -1));
+  if (fp !== fn) return fp ? n : mul(n, -1);
+  return dot(sub(mid, centroid()), n) >= 0 ? n : mul(n, -1);
+}
+function alignFaces(fresh) {
+  if (!opt.faceAlign) return "";
+  const moved = new Set();
+  for (const nw of fresh) {
+    const Ln = dist(nw.a, nw.b); if (Ln < 0.05) continue;
+    const un = mul(sub(nw.b, nw.a), 1 / Ln);
+    for (const e of ["a", "b"]) {
+      const P = nw[e];
+      const X = S.walls.find(x => (dist(x.a, P) < 1e-4 || dist(x.b, P) < 1e-4) && Math.abs(TH(x) - TH(nw)) > 1e-6 && (() => { const lx = dist(x.a, x.b); if (lx < 0.05) return false; const ux = mul(sub(x.b, x.a), 1 / lx); return Math.abs(un.x * ux.y - un.y * ux.x) < 1e-3; })());
+      if (!X) continue;
+      // não alinha se no ponto já chega outra parede (canto ou T): aí o encontro é pelo eixo
+      if (S.walls.filter(x => x !== X && (dist(x.a, P) < 1e-4 || dist(x.b, P) < 1e-4)).length) continue;
+      const nOut = outwardOf(X), m = TH(X) / 2 - TH(nw) / 2, sh = mul(nOut, m);
+      const P0 = { x: nw.a.x, y: nw.a.y }, P1 = { x: nw.b.x, y: nw.b.y };
+      for (const w of fresh) for (const k of ["a", "b"]) { const q = w[k]; if (moved.has(q)) continue; if (dist(q, P0) < 1e-6 || dist(q, P1) < 1e-6) { q.x = clean(q.x + sh.x); q.y = clean(q.y + sh.y); moved.add(q); } }
+      return "Face de fora alinhada com a parede de " + Math.round(TH(X) * 100) + " cm";
+    }
+  }
+  return "";
+}
+
 /* ---------- Selecionar (várias paredes) ---------- */
 let exporting = false, pickBox = null; // {a, b} na tela
 function pickWalls() { return S.walls.filter(w => multi.has(w.id)); }
@@ -1456,7 +1486,10 @@ function endPtr(ev) {
     rawStroke = null; live = null;
     if (pts.length >= 2) {
       snapshot();
-      for (let i = 1; i < pts.length; i++) S.walls.push({ id: nid(), a: { ...pts[i - 1] }, b: { ...pts[i] }, t: opt.thick });
+      const fresh = []; for (let i = 1; i < pts.length; i++) fresh.push({ id: nid(), a: { ...pts[i - 1] }, b: { ...pts[i] }, t: opt.thick });
+      const why = alignFaces(fresh);
+      S.walls.push(...fresh);
+      if (why) toast(why);
       // se o último ponto caiu no meio de uma parede, tudo bem: as cotas continuam por parede
       after();
     } else draw();
