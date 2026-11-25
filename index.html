@@ -313,7 +313,7 @@ let S = { walls: [], texts: [], openings: [], inks: [], dims: [], lot: null, tit
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
 const view = { k: 50, ox: 0, oy: 0 };          // tela = mundo(m) * k + o
-const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "face", lenRef: null, faceAlign: true };
+const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "face", lenRef: null, faceAlign: true, smartInk: true };
 const multi = new Set();   // paredes da ferramenta Selecionar
 let msr = { a: null, b: null, hover: null };
 const showDim = w => opt.allDims || !!w.dim;
@@ -697,6 +697,104 @@ function drawInks() {
   for (const k of S.inks) { ctx.strokeStyle = k.c === "y" ? COL.acc : COL.wall; inkPath(k.pts); ctx.stroke(); }
   if (inkCur) { ctx.strokeStyle = inkCur.c === "y" ? COL.acc : COL.wall; inkPath(inkCur.pts); ctx.stroke(); }
   ctx.lineCap = "square"; ctx.lineJoin = "miter";
+}
+/* ---------- escrita inteligente: P = porta, J = janela, arco = porta (sem internet) ---------- */
+const smart = { strokes: [], timer: null };
+function smartQueue(k) {
+  if (!opt.smartInk) return;
+  smart.strokes.push(k); if (smart.timer) clearTimeout(smart.timer);
+  smart.timer = setTimeout(smartRun, 750);
+}
+function resampleN(pts, n) {
+  let L = 0; for (let i = 1; i < pts.length; i++) L += dist(pts[i - 1], pts[i]);
+  if (L < 1e-9) return Array.from({ length: n }, () => ({ ...pts[0] }));
+  const I = L / (n - 1), out = [{ ...pts[0] }]; let D = 0; const q = pts.map(p => ({ ...p }));
+  for (let i = 1; i < q.length; i++) {
+    const d = dist(q[i - 1], q[i]);
+    if (D + d >= I && d > 0) { const t = (I - D) / d, np = { x: q[i - 1].x + t * (q[i].x - q[i - 1].x), y: q[i - 1].y + t * (q[i].y - q[i - 1].y) }; out.push(np); q.splice(i, 0, np); D = 0; }
+    else D += d;
+  }
+  while (out.length < n) out.push({ ...q[q.length - 1] });
+  return out.slice(0, n);
+}
+function normShape(pts) {
+  const r = resampleN(pts, 48);
+  let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; for (const p of r) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
+  const sc = Math.max(maxx - minx, maxy - miny) || 1, c = mul(r.reduce((a, p) => add(a, p), { x: 0, y: 0 }), 1 / r.length);
+  return r.map(p => ({ x: (p.x - c.x) / sc, y: (p.y - c.y) / sc }));
+}
+const BUMP = [[0.55, 0], [0.8, 0.08], [0.9, 0.25], [0.8, 0.42], [0.55, 0.5], [0, 0.5]];
+const HOOK = [[0.7, 0.75], [0.6, 0.93], [0.4, 1], [0.2, 0.93], [0.12, 0.78]];
+const GLYPHS = [
+  ["door", [[0, 1], [0, 0], ...BUMP]],
+  ["door", [[0, 0], [0, 1], [0, 0], ...BUMP]],
+  ["window", [[0.7, 0], ...HOOK]],
+  ["window", [[0.3, 0], [1, 0], [0.7, 0], ...HOOK]],
+  ["window", [[0.7, 0], ...HOOK, [0.3, 0], [1, 0]]],
+].map(([k, pts]) => ({ k, shape: normShape(pts.map(([x, y]) => ({ x, y }))) }));
+function glyphOf(pts) {
+  const sh = normShape(pts); let best = null, bd = 1e9;
+  for (const g of GLYPHS) { let d = 0; for (let i = 0; i < sh.length; i++) d += dist(sh[i], g.shape[i]); d /= sh.length; if (d < bd) { bd = d; best = g.k; } }
+  if (window.__cqDebug) console.log("glyph", best, bd.toFixed(3));
+  return bd < 0.2 ? best : null;
+}
+function arcOf(pts) {
+  // quarto de círculo: centro pelo início, meio e fim; todos os pontos perto do raio; varre 60° a 120°
+  if (pts.length < 6) return null;
+  const A = pts[0], B = pts[Math.floor(pts.length / 2)], C = pts[pts.length - 1];
+  const d = 2 * (A.x * (B.y - C.y) + B.x * (C.y - A.y) + C.x * (A.y - B.y)); if (Math.abs(d) < 1e-9) return null;
+  const a2 = dot(A, A), b2 = dot(B, B), c2 = dot(C, C);
+  const O = { x: (a2 * (B.y - C.y) + b2 * (C.y - A.y) + c2 * (A.y - B.y)) / d, y: (a2 * (C.x - B.x) + b2 * (A.x - C.x) + c2 * (B.x - A.x)) / d };
+  const r = dist(O, A); if (r < 0.3 || r > 2.2) return null;
+  for (const p of pts) if (Math.abs(dist(O, p) - r) > r * 0.16) return null;
+  let sweep = 0; for (let i = 1; i < pts.length; i++) { let da = Math.atan2(pts[i].y - O.y, pts[i].x - O.x) - Math.atan2(pts[i - 1].y - O.y, pts[i - 1].x - O.x); while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; sweep += da; }
+  sweep = Math.abs(sweep); if (sweep < 1.05 || sweep > 2.1) return null;
+  return { O, r, A, C };
+}
+function nearestWall(p, maxM) {
+  let best = null, bd = maxM;
+  for (const w of S.walls) { const r = segDist(p, w.a, w.b); if (r.d < bd) { bd = r.d; best = { w, t: r.t, d: r.d }; } }
+  return best;
+}
+function smartRun() {
+  smart.timer = null; const group = smart.strokes; smart.strokes = [];
+  if (!group.length || !S.walls.length) return;
+  const all = []; for (const k of group) for (const q of k.pts) all.push({ x: q[0], y: q[1] });
+  if (all.length < 5) return;
+  let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; for (const p of all) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
+  const size = Math.max(maxx - minx, maxy - miny);
+  const drop = () => { const ids = new Set(group.map(k => k.id)); S.inks = S.inks.filter(k => !ids.has(k.id)); };
+  // arco da porta
+  if (group.length === 1) {
+    const arc = arcOf(all);
+    if (arc) {
+      const hit = nearestWall(arc.O, Math.max(0.35, arc.r * 0.35));
+      if (hit) {
+        const w = hit.w, L = dist(w.a, w.b), u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x };
+        const sizes = OPEN_SIZES.door; const ow = sizes.reduce((a, b) => Math.abs(b - arc.r) < Math.abs(a - arc.r) ? b : a);
+        const sh = dot(sub(arc.O, w.a), u);
+        // ponta do arco que fica na parede (a outra é a folha aberta)
+        const onW = Math.abs(dot(sub(arc.A, w.a), n)) < Math.abs(dot(sub(arc.C, w.a), n)) ? arc.A : arc.C, leaf = onW === arc.A ? arc.C : arc.A;
+        const dir = Math.sign(dot(sub(onW, arc.O), u)) || 1;
+        let pos = sh + dir * ow / 2; if (opt.round) pos = r5(pos);
+        pos = Math.max(ow / 2, Math.min(L - ow / 2, pos));
+        snapshot(); drop();
+        const o = { id: nid(), wall: w.id, pos: clean(pos), w: Math.min(ow, L), kind: "door", hinge: dir < 0, side: dot(sub(leaf, arc.O), n) < 0 };
+        S.openings.push(o); after(); toast("Porta de " + fmt(o.w) + " pelo arco"); return;
+      }
+    }
+  }
+  // letras P e J
+  if (size > 2.5 || group.length > 2) return;
+  const kind = glyphOf(all); if (!kind) return;
+  const c = { x: (minx + maxx) / 2, y: (miny + maxy) / 2 }, hit = nearestWall(c, Math.max(0.8, size * 1.2)); if (!hit) return;
+  const w = hit.w, L = dist(w.a, w.b), ow = Math.min(kind === "door" ? 0.8 : 1.2, L);
+  let pos = hit.t * L; if (opt.round) pos = r5(pos); pos = Math.max(ow / 2, Math.min(L - ow / 2, pos));
+  snapshot(); drop();
+  const o = { id: nid(), wall: w.id, pos: clean(pos), w: ow, kind, side: false, hinge: false };
+  S.openings.push(o);
+  if (kind === "door") { const g2 = openGeom(o); if (g2 && dot(sub(centroid(), add(w.a, mul(g2.u, pos))), g2.side) < 0) o.side = true; }
+  after(); openOpening(o); toast(kind === "door" ? "P virou porta" : "J virou janela");
 }
 function hitInk(sp) {
   for (let j = S.inks.length - 1; j >= 0; j--) {
@@ -1347,7 +1445,7 @@ cv.addEventListener("pointerdown", ev => {
   const fingerOnly = penMode && ev.pointerType === "touch" && (tool === "draw" || tool === "erase" || tool === "ink" || tool === "measure");
   if (ev.button === 1 || ev.button === 2 || tool === "pan" || fingerOnly) { drag = { mode: "pan", last: p }; return; }
   if (tool === "draw") { rawStroke = [p]; drag = { mode: "draw" }; }
-  else if (tool === "ink") { const w0 = toW(p); inkCur = { id: nid(), c: opt.inkColor, pts: [[clean(w0.x), clean(w0.y)]] }; drag = { mode: "ink", last: p }; }
+  else if (tool === "ink") { if (smart.timer) { clearTimeout(smart.timer); smart.timer = null; } const w0 = toW(p); inkCur = { id: nid(), c: opt.inkColor, pts: [[clean(w0.x), clean(w0.y)]] }; drag = { mode: "ink", last: p }; }
   else if (tool === "erase") { drag = { mode: "erase", did: false }; eraseAt(p); }
   else if (tool === "text") { drag = { mode: "textTap", start: p }; }
   else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
@@ -1480,7 +1578,7 @@ function endPtr(ev) {
   if (d.mode === "lotDraw") { const raw = rawStroke; rawStroke = null; live = null; if (raw && raw.length > 3) lotFromStroke(raw); else draw(); return; }
   if (d.mode === "lotTap") { openLot(d.si); return; }
   if (d.mode === "lotMove") { if (d.moved) after(); else openLot(null); return; }
-  if (d.mode === "ink") { if (inkCur) { snapshot(); S.inks.push(inkCur); inkCur = null; after(); } return; }
+  if (d.mode === "ink") { if (inkCur) { snapshot(); S.inks.push(inkCur); smartQueue(inkCur); inkCur = null; after(); } return; }
   if (d.mode === "draw") {
     const pts = rawStroke ? straighten(rawStroke) : [];
     rawStroke = null; live = null;
@@ -1671,7 +1769,7 @@ $("expTitle").addEventListener("input", e => { S.title = e.target.value; save();
 
 function setTool(t) {
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Fillet: toque na primeira parede e depois na segunda. Elas se estendem ou cortam até formar o canto.", ink: "Pincel: escreva ou rabisque à mão livre. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Fillet: toque na primeira parede e depois na segunda. Elas se estendem ou cortam até formar o canto.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
   cv.style.cursor = t === "pan" ? "grab" : t === "erase" ? "cell" : t === "text" ? "text" : "crosshair";
