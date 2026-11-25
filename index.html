@@ -111,6 +111,10 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 .nb-ed{position:absolute;z-index:4;display:flex;gap:4px;align-items:center;background:var(--accent);border-radius:10px;padding:4px;box-shadow:0 6px 20px rgba(0,0,0,.4);transform:translate(-50%,-50%)}
 .nb-ed input{width:84px;min-height:34px;border:0;border-radius:7px;background:#fff;color:#1b2a44;font-family:var(--font-num);font-weight:700;font-size:15px;text-align:center;user-select:text;-webkit-user-select:text}
 .nb-ed button{min-height:34px;padding:0 10px;border:0;border-radius:7px;background:#1b2a44;color:#fff;font-weight:700;cursor:pointer}
+.pj{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper-deep)}
+.pj.on{border-color:var(--accent)}
+.pj b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:14px}
+.pj small{color:var(--ink-soft);font-size:11.5px;white-space:nowrap}
 </style>
 
 <div class="app">
@@ -128,6 +132,8 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <option value="face" selected>ext./int.</option><option value="axis">eixo</option></select></label>
     <button class="btn" id="optDims" title="Mostrar a medida de todas as paredes, mesmo as que você ainda não indicou">⟷ <span class="hide-sm">Todas as cotas</span></button>
     <button class="btn" id="btnAreas" title="Quadro de áreas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 10v10"/></svg><span class="hide-sm">Áreas</span></button>
+    <button class="btn" id="btnProj" hidden title="Projetos guardados no Claude"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="hide-sm">Projetos</span></button>
+    <button class="btn" id="btnAsk" hidden title="Perguntar ao Claude sobre este desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg><span class="hide-sm">Perguntar</span></button>
     <button class="btn" id="btnLayers" title="Camadas: mostrar ou esconder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><span class="hide-sm">Camadas</span></button>
     <button class="btn" id="btnFit" title="Enquadrar o desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="hide-sm">Enquadrar</span></button>
     <button class="btn" id="btnNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg><span class="hide-sm">Novo</span></button>
@@ -408,6 +414,20 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <div class="row"><button class="btn danger" id="newYes">Apagar e começar</button><button class="btn" data-close>Cancelar</button></div>
     </div>
 
+    <div class="sheet" id="sheetProj" hidden>
+      <h3><span>Projetos no Claude</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <p class="note" id="projCur"></p>
+      <div class="row"><label class="field"><input id="projName" maxlength="60" placeholder="Nome do projeto (ex.: Casa Rosangela)" autocomplete="off"></label><button class="btn primary" id="projSave">Guardar</button></div>
+      <div id="projList" style="display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto"></div>
+      <p class="note" id="projMsg">Os projetos guardados aqui ficam no Claude: o Claude consegue abrir, conferir e editar o desenho quando você pedir na conversa.</p>
+    </div>
+    <div class="sheet" id="sheetAsk" hidden>
+      <h3><span>Perguntar ao Claude</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <textarea id="askQ" rows="3" maxlength="1500" placeholder="Ex.: Confere os recuos e a taxa de ocupação. Onde caberia um segundo quarto?" style="width:100%;resize:vertical;border-radius:10px;border:1px solid var(--line);background:var(--paper-deep);padding:10px;font:inherit;color:inherit;user-select:text;-webkit-user-select:text"></textarea>
+      <div class="row"><button class="btn primary" id="askGo">Perguntar</button><button class="btn" id="askStop" hidden>Parar</button><span class="note">O Claude recebe as medidas, cômodos, portas, janelas e o terreno deste desenho.</span></div>
+      <div id="askA" style="white-space:pre-wrap;font-size:14px;line-height:1.5;max-height:46vh;overflow:auto;user-select:text;-webkit-user-select:text"></div>
+    </div>
+
     <div class="toast" id="toast" hidden></div>
     <div class="nb-ed" id="nbEd" hidden><input id="nbIn" inputmode="decimal" autocomplete="off" aria-label="Nova distância em metros"><button id="nbOk">OK</button></div>
   </div>
@@ -489,7 +509,8 @@ function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.
 function undo() { if (!hist.length) return; redoStack.push(JSON.stringify(S)); S = JSON.parse(hist.pop()); closeSheets(); after(); }
 function redo() { if (!redoStack.length) return; hist.push(JSON.stringify(S)); S = JSON.parse(redoStack.pop()); closeSheets(); after(); }
 function updUndo() { $("undo").disabled = !hist.length; $("redo").disabled = !redoStack.length; }
-function after() { save(); updUndo(); draw(); if (skOn) skDraw(); }
+function after() { save(); updUndo(); draw(); if (skOn) skDraw(); if (projQueue) projQueue(); }
+var projQueue = null;
 
 /* ---------- geometria ---------- */
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
@@ -2150,7 +2171,7 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 /* ---------- painéis ---------- */
 function closeSheets() {
   nbClose();
-  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock"]) $(id).hidden = true;
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
@@ -2325,7 +2346,7 @@ $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk();
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
-$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], sk: [], lot: null, title: "" }; multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], sk: [], lot: null, title: "" }; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
 $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
@@ -2416,6 +2437,16 @@ function fileBase() {
 }
 $("expJson").onclick = () => offer(fileBase() + ".json", JSON.stringify({ app: "croqui", v: 1, ...S }, null, 1));
 $("expOpen").onclick = () => $("fileOpen").click();
+function cleanProj(o) {
+  return { title: String(o.title || ""), walls: o.walls.filter(w => w && w.a && w.b).map(w => ({ id: typeof w.id === "string" ? w.id.slice(0, 40) : nid(), a: { x: +w.a.x, y: +w.a.y }, b: { x: +w.b.x, y: +w.b.y }, flip: !!w.flip, fixB: !!w.fixB, dim: !!w.dim, t: [0.1, 0.12, 0.15, 0.2].includes(+w.t) ? +w.t : 0.15 })),
+            lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
+            inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
+            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
+            dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
+            blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
+            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
+            sk: skClean(o.sk) };
+}
 $("fileOpen").onchange = e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   const r = new FileReader();
@@ -2424,14 +2455,7 @@ $("fileOpen").onchange = e => {
       const o = JSON.parse(r.result);
       if (!o || !Array.isArray(o.walls)) throw 0;
       snapshot();
-      S = { title: String(o.title || ""), walls: o.walls.filter(w => w && w.a && w.b).map(w => ({ id: typeof w.id === "string" ? w.id.slice(0, 40) : nid(), a: { x: +w.a.x, y: +w.a.y }, b: { x: +w.b.x, y: +w.b.y }, flip: !!w.flip, fixB: !!w.fixB, dim: !!w.dim, t: [0.1, 0.12, 0.15, 0.2].includes(+w.t) ? +w.t : 0.15 })),
-            lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
-            inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
-            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
-            dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
-            blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
-            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
-            sk: skClean(o.sk) };
+      S = cleanProj(o); if (window.__projUnlink) window.__projUnlink();
       closeSheets(); after(); fit(); toast("Projeto aberto");
     } catch (err) { $("expMsg").textContent = "Esse arquivo não é um projeto do Croqui."; }
     e.target.value = "";
@@ -2798,6 +2822,155 @@ function skPdf(doc) { // uma página A4 deitada por folha de rascunho com algum 
   return n;
 }
 window.__sk = { set: skSet, get V() { return skV; }, get page() { return skPage; } };
+
+/* ---------- ligação com o Claude (só na versão aberta dentro do Claude) ---------- */
+// projetos/<id> = { nome, etapa, atualizado, por, rev, dados: JSON do desenho }
+// lista/<id>    = { nome, etapa, atualizado, por, tamanho }   (leve, para a lista)
+const ETAPAS = [["medicao", "Medição"], ["projeto", "Em projeto"], ["concluido", "Concluído"]];
+let pdb = null, puser = null, pme = null, proj = null, projUnsub = null, projTimer = null, projBusy = false, projAgain = false, projLastRev = null, projListing = [];
+const projIdOk = id => typeof id === "string" && /^[A-Za-z0-9_-]{4,60}$/.test(id);
+function projStatus() {
+  const c = $("projCur"); c.textContent = "";
+  if (!proj) { c.textContent = "Este desenho ainda não está guardado no Claude. Dê um nome e toque em Guardar."; return; }
+  const b = document.createElement("b"); b.textContent = proj.nome; c.append("Aberto: ", b, " · salva sozinho a cada alteração");
+}
+window.__projUnlink = () => { if (projUnsub) projUnsub(); projUnsub = null; proj = null; projStatus(); };
+function projPayload() {
+  const dados = JSON.stringify({ app: "croqui", v: 1, ...S });
+  return dados;
+}
+async function projWrite() {
+  if (!pdb || !proj) return;
+  if (projBusy) { projAgain = true; return; }
+  const dados = projPayload();
+  if (dados.length > 245000) { $("projMsg").textContent = "O desenho ficou grande demais para guardar no Claude (muito traço de pincel). Apague alguns rabiscos ou use Salvar projeto."; toast("Projeto grande demais para o Claude"); return; }
+  projBusy = true;
+  const rev = nid(), now = new Date().toISOString(), por = pme || "";
+  projLastRev = rev;
+  try {
+    await pdb.doc("projetos/" + proj.id).set({ nome: proj.nome, etapa: proj.etapa, atualizado: now, por, rev, dados });
+    await pdb.doc("lista/" + proj.id).set({ nome: proj.nome, etapa: proj.etapa, atualizado: now, por, tamanho: dados.length });
+  } catch (e) {
+    const code = e && e.code;
+    toast(code === "quota_exceeded" ? "O espaço do Claude encheu. Exclua projetos antigos." : (code === "not_granted" || code === "revoked" ? "Você só pode ver este projeto, não salvar." : "Não consegui salvar no Claude agora. Tento de novo na próxima alteração."));
+  }
+  projBusy = false;
+  if (projAgain) { projAgain = false; projWrite(); }
+}
+projQueue = () => { if (!proj) return; clearTimeout(projTimer); projTimer = setTimeout(() => { projTimer = null; projWrite(); }, 2500); };
+function projLoadData(d) {
+  try { const o = JSON.parse(d.dados); if (!o || !Array.isArray(o.walls)) throw 0; S = cleanProj(o); return true; } catch (e) { toast("Esse projeto está com defeito e não abriu."); return false; }
+}
+function projWatch() {
+  if (projUnsub) projUnsub();
+  const id = proj.id;
+  projUnsub = pdb.doc("projetos/" + id).onSnapshot(snap => {
+    if (!proj || proj.id !== id || !snap.exists) return;
+    const d = snap.data(); if (!d || d.rev === projLastRev || snap.metadata.hasPendingWrites) return;
+    if (projTimer || projBusy) return; // tem alteração local esperando: a nossa vence
+    projLastRev = d.rev; proj.nome = String(d.nome || proj.nome); proj.etapa = d.etapa || proj.etapa;
+    snapshot(); if (projLoadData(d)) { const q = projQueue; projQueue = null; after(); projQueue = q; toast("Projeto atualizado por outra pessoa ou pelo Claude"); }
+  }, () => {});
+}
+async function projOpen(id) {
+  if (!projIdOk(id)) return;
+  $("projMsg").textContent = "Abrindo...";
+  try {
+    const snap = await pdb.doc("projetos/" + id).get();
+    if (!snap.exists) { $("projMsg").textContent = "Esse projeto não foi encontrado."; return; }
+    const d = snap.data(); snapshot();
+    if (!projLoadData(d)) return;
+    clearTimeout(projTimer); projTimer = null;
+    proj = { id, nome: String(d.nome || "Projeto"), etapa: d.etapa || "medicao" }; projLastRev = d.rev;
+    const q = projQueue; projQueue = null; closeSheets(); after(); fit(); projQueue = q;
+    projWatch(); toast("Projeto " + proj.nome + " aberto");
+  } catch (e) { $("projMsg").textContent = "Não consegui abrir agora. Tente de novo em instantes."; }
+}
+async function projRenderList() {
+  const box = $("projList"); box.textContent = "";
+  if (!projListing.length) { const p = document.createElement("p"); p.className = "note"; p.textContent = "Nenhum projeto guardado ainda."; box.appendChild(p); return; }
+  let names = {};
+  try { const ids = [...new Set(projListing.map(x => x.por).filter(Boolean))]; if (ids.length && puser) { const ps = await puser.profiles(ids); for (const k of ids) names[k] = (ps[k] && ps[k].name) || ""; } } catch (e) {}
+  box.textContent = "";
+  for (const it of projListing) {
+    const row = document.createElement("div"); row.className = "pj" + (proj && proj.id === it.id ? " on" : "");
+    const info = document.createElement("div"); info.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:2px";
+    const b = document.createElement("b"); b.textContent = it.nome || "Sem nome";
+    const sm = document.createElement("small"); const dt = it.atualizado ? new Date(it.atualizado) : null;
+    sm.textContent = (dt && !isNaN(dt) ? dt.toLocaleDateString("pt-BR") + " " + dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "") + (names[it.por] ? " · " + names[it.por] : "");
+    info.append(b, sm);
+    const et = document.createElement("select"); et.setAttribute("aria-label", "Etapa do projeto"); et.className = "btn"; et.style.minHeight = "34px";
+    for (const [v, l] of ETAPAS) { const o = document.createElement("option"); o.value = v; o.textContent = l; if ((it.etapa || "medicao") === v) o.selected = true; et.appendChild(o); }
+    et.onchange = async () => {
+      try { await pdb.doc("lista/" + it.id).update({ etapa: et.value }); await pdb.doc("projetos/" + it.id).update({ etapa: et.value }); if (proj && proj.id === it.id) proj.etapa = et.value; toast("Etapa: " + et.options[et.selectedIndex].textContent); }
+      catch (e) { toast("Não consegui mudar a etapa agora."); }
+    };
+    const op = document.createElement("button"); op.className = "btn"; op.textContent = proj && proj.id === it.id ? "Aberto" : "Abrir"; op.disabled = !!(proj && proj.id === it.id);
+    op.onclick = () => projOpen(it.id);
+    const del = document.createElement("button"); del.className = "btn danger"; del.textContent = "×"; del.title = "Excluir projeto";
+    del.onclick = async () => {
+      if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Excluir?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "×"; }, 3000); return; }
+      try { await pdb.doc("projetos/" + it.id).delete(); await pdb.doc("lista/" + it.id).delete(); if (proj && proj.id === it.id) window.__projUnlink(); toast("Projeto excluído do Claude"); } catch (e) { toast("Não consegui excluir agora."); }
+    };
+    row.append(info, et, op, del); box.appendChild(row);
+  }
+}
+$("projSave").onclick = async () => {
+  if (!pdb) return;
+  const nome = $("projName").value.trim() || (proj && proj.nome) || S.title || "";
+  if (!nome) { toast("Dê um nome ao projeto"); $("projName").focus(); return; }
+  if (!proj || (nome !== proj.nome && $("projName").value.trim())) {
+    const same = projListing.find(x => x.nome === nome);
+    proj = same ? { id: same.id, nome, etapa: same.etapa || "medicao" } : { id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), nome, etapa: "medicao" };
+  }
+  if (!S.title) S.title = nome;
+  clearTimeout(projTimer); projTimer = null;
+  await projWrite(); projWatch(); projStatus(); $("projName").value = ""; toast("Guardado no Claude: " + nome);
+};
+$("projName").addEventListener("keydown", e => { if (e.key === "Enter") $("projSave").click(); e.stopPropagation(); });
+$("btnProj").onclick = () => { closeSheets(); projStatus(); $("projName").placeholder = proj ? "Novo nome (deixe vazio para manter " + proj.nome + ")" : "Nome do projeto (ex.: Casa Rosangela)"; $("sheetProj").hidden = false; projRenderList(); };
+
+// resumo do desenho para o Claude
+function drawingSummary() {
+  const L = [], ar = areasCalc();
+  L.push("Projeto: " + (proj ? proj.nome : S.title || "sem nome") + ". Medidas em metros.");
+  if (S.lot) { const sides = S.lot.pts.map((_, i) => { const [a, b] = lotSide(i); return sideRole(i).toLowerCase() + " " + fmt(dist(a, b)); }); L.push("Terreno: " + fmt(ar.terreno) + " m² (lados: " + sides.join(", ") + ")."); }
+  if (ar.construida) L.push("Área construída: " + fmt(ar.construida) + " m²." + (ar.ocupacao !== null ? " Taxa de ocupação: " + (ar.ocupacao * 100).toFixed(1).replace(".", ",") + "%." : ""));
+  if (ar.recuos.length) L.push("Recuos até a divisa: " + ar.recuos.map(q => q.role.toLowerCase() + " " + fmt(q.d)).join(", ") + ".");
+  if (S.texts.length) L.push("Cômodos (área útil): " + S.texts.map(t => t.s + (areaOf(t) ? " " + fmt(areaOf(t)) + " m²" : "")).join("; ") + ".");
+  L.push("Paredes (" + S.walls.length + "), eixo de/até e espessura: " + S.walls.slice(0, 120).map(w => "(" + fmt(w.a.x) + ";" + fmt(w.a.y) + ")-(" + fmt(w.b.x) + ";" + fmt(w.b.y) + ") " + Math.round(TH(w) * 100) + "cm").join(", ") + ".");
+  const es = esquadrias(); if (es.length) L.push("Esquadrias: " + es.map(e => e.code + " " + e.n + "x " + fmt(e.w) + "x" + fmt(e.h) + (e.ps !== null ? " peitoril " + fmt(e.ps) : "")).join("; ") + ".");
+  if (S.blocks && S.blocks.length) L.push("Móveis: " + S.blocks.map(b => (BLOCKS[b.type] || {}).nm).filter(Boolean).join(", ") + ".");
+  const notes = (S.sk || []).flatMap(p => p.items.filter(i => i.s).map(i => p.nm + ": " + i.s)); if (notes.length) L.push("Anotações do rascunho: " + notes.slice(0, 40).join("; ") + ".");
+  return L.join("\n");
+}
+let askCtl = null;
+$("btnAsk").onclick = () => { closeSheets(); $("sheetAsk").hidden = false; setTimeout(() => $("askQ").focus(), 50); };
+$("askQ").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("askGo").click(); e.stopPropagation(); });
+$("askStop").onclick = () => { if (askCtl) askCtl.abort(); };
+$("askGo").onclick = async () => {
+  const q = $("askQ").value.trim(); if (!q) { $("askQ").focus(); return; }
+  const sample = await window.claude.use("sample"); if (!sample) { $("askA").textContent = "O Claude não está disponível aqui."; return; }
+  const out = $("askA"); out.textContent = "Pensando...";
+  askCtl = new AbortController(); $("askGo").disabled = true; $("askStop").hidden = false;
+  const prompt = "Você ajuda um escritório de engenharia civil em Birigui-SP a conferir croquis de casas. Responda em português do Brasil, direto e curto, com medidas em metros no formato 0,00. Se a pergunta depender de lei municipal ou norma, diga o que conferir e onde, sem inventar números.\n\nDESENHO ABERTO:\n" + drawingSummary() + "\n\nPERGUNTA: " + q;
+  try { const r = await sample(prompt, { signal: askCtl.signal, cache: false, onText: ({ text }) => { out.textContent = text; } }); out.textContent = r.text + (r.truncated ? "\n\n(resposta cortada)" : ""); }
+  catch (e) { out.textContent = (e && e.text) ? e.text + "\n\n(interrompido)" : (e && e.code === "not_granted" ? "Você não liberou o Claude para este app. Dá para liberar no menu de permissões do artifact." : e && e.code === "rate_limited" ? "Muitas perguntas seguidas. Espere um pouco e tente de novo." : "Não consegui falar com o Claude agora."); }
+  askCtl = null; $("askGo").disabled = false; $("askStop").hidden = true;
+};
+
+// liga tudo quando estiver dentro do Claude (no app instalado pelo GitHub nada disso aparece)
+if (window.claude && typeof window.claude.use === "function") {
+  window.claude.use("sample").then(sm => { if (sm) $("btnAsk").hidden = false; }).catch(() => {});
+  window.claude.use("db").then(async db => {
+    if (!db) return; pdb = db; $("btnProj").hidden = false;
+    try { puser = await window.claude.use("user"); pme = puser ? await puser.id() : null; } catch (e) {}
+    db.collection("lista").orderBy("atualizado", "desc").limit(300).onSnapshot(snap => {
+      projListing = snap.docs.filter(d => projIdOk(d.id)).map(d => ({ id: d.id, ...d.data() }));
+      if (!$("sheetProj").hidden) projRenderList();
+    }, () => {});
+  }).catch(() => {});
+}
 
 /* ---------- início ---------- */
 window.__cq = { get S() { return S; }, view, toS: p => toS(p), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
