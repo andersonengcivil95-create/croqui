@@ -673,6 +673,12 @@ const openH = o => o.h || (o.kind === "door" ? 2.1 : 1.0);
 const openPs = o => o.ps ?? 1.1;
 function openLabel(o, g) { return o.kind === "door" ? ["P " + fmt(g.ow) + "x" + fmt(openH(o))] : [fmt(g.ow) + "x" + fmt(openH(o)), fmt(openPs(o))]; }
 function openLabelSide(g) { const mid = add(g.w.a, mul(g.u, g.c)); return dot(sub(centroid(), mid), g.n) >= 0 ? g.n : mul(g.n, -1); }
+function doorLbl(g, textLen) { // textLen em metros; devolve centro (mundo), ângulo legível e direção de afastamento da folha
+  const away = mul(sub(g.other, g.hinge), 1 / (dist(g.hinge, g.other) || 1)); // lado do arco: área sempre livre
+  let ang = Math.atan2(g.side.y, g.side.x); if (ang > Math.PI / 2 - 1e-6) ang -= Math.PI; else if (ang < -Math.PI / 2 - 1e-6) ang += Math.PI; // vertical lê de baixo para cima
+  const along = Math.max((g.ow + g.t / 2) / 2, g.t / 2 + textLen / 2 + 0.03);
+  return { c: add(g.hinge, mul(g.side, along)), ang, away };
+}
 function arcPts(g, steps = 14) {
   const a0 = Math.atan2(g.side.y, g.side.x), a1v = sub(g.other, g.hinge), a1 = Math.atan2(a1v.y, a1v.x);
   let d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
@@ -708,9 +714,10 @@ function drawOpenings() {
       const back = o.kind === "door" ? mul(g.side, -1) : openLabelSide(g);
       let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
       const two = lines.length > 1, dimOn = showDim(g.w) && opt.dimMode === "face", dist0 = tw / 2 + (two ? (dimOn ? 46 : 20) : (dimOn ? 34 : 9));
-      const tp = { x: m.x + back.x * dist0, y: m.y + back.y * dist0 };
-      ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang);
+      let tp = { x: m.x + back.x * dist0, y: m.y + back.y * dist0 };
       ctx.font = "500 10.5px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      if (o.kind === "door") { const D = doorLbl(g, ctx.measureText(lines[0]).width / view.k), q = toS(D.c); tp = { x: q.x + D.away.x * 9, y: q.y + D.away.y * 9 }; ang = D.ang; }
+      ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang);
       ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.strokeStyle = ctx.fillStyle;
       if (!two) ctx.fillText(lines[0], 0, 0);
       else {
@@ -1243,8 +1250,9 @@ function buildDxf() {
     if (L_("lbl")) { let ang = Math.atan2(gm.u.y, gm.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
       const lb = openLabel(o, gm), ly = o.kind === "door" ? "PORTA" : "JANELA", mid = add(gm.w.a, mul(gm.u, gm.c)), rot = -ang * 180 / Math.PI;
       const back = o.kind === "door" ? mul(gm.side, -1) : openLabelSide(gm), du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
-      const c0 = add(mid, mul(back, gm.t / 2 + (lb.length > 1 ? (showDim(gm.w) ? 0.75 : 0.35) : 0.18)));
-      if (lb.length === 1) text(ly, c0, 0.12, lb[0], rot);
+      let c0 = add(mid, mul(back, gm.t / 2 + (lb.length > 1 ? (showDim(gm.w) ? 0.75 : 0.35) : 0.18)));
+      if (o.kind === "door") { const D = doorLbl(gm, lb[0].length * 0.1); c0 = add(D.c, mul(D.away, 0.12)); text(ly, c0, 0.12, lb[0], -D.ang * 180 / Math.PI); }
+      else if (lb.length === 1) text(ly, c0, 0.12, lb[0], rot);
       else { text(ly, add(c0, mul(dn, -0.12)), 0.12, lb[0], rot); line(ly, add(c0, mul(du, -0.4)), add(c0, mul(du, 0.4))); text(ly, add(c0, mul(dn, 0.13)), 0.12, lb[1], rot); } }
     if (o.kind === "window") { for (const fr of [-0.25, 0, 0.25]) { const off = mul(gm.n, fr * gm.t); line("JANELA", add(gm.p1, off), add(gm.p2, off)); } }
     else {
@@ -2551,8 +2559,9 @@ $("expPdf").onclick = () => {
       let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
       const lb = openLabel(o, g), back = o.kind === "door" ? mul(g.side, -1) : openLabelSide(g), du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
       const two = lb.length > 1, c = P(add(add(g.w.a, mul(g.u, g.c)), mul(back, g.t / 2))), dimOn = showDim(g.w) && opt.dimMode === "face", d0 = two ? (dimOn ? 7.2 : 3.6) : (dimOn ? 7.4 : 1.8);
-      const cc = { x: c.x + back.x * d0, y: c.y + back.y * d0 };
+      let cc = { x: c.x + back.x * d0, y: c.y + back.y * d0 };
       doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setLineWidth(0.1);
+      if (o.kind === "door") { const D = doorLbl(g, doc.getTextWidth(lb[0]) / mm), q = P(D.c); cc = { x: q.x + D.away.x * 1.6, y: q.y + D.away.y * 1.6 }; ang = D.ang; du.x = Math.cos(ang); du.y = Math.sin(ang); dn.x = -du.y; dn.y = du.x; }
       const put = (str, off) => { const tw2 = doc.getTextWidth(str); doc.text(str, cc.x - du.x * tw2 / 2 + dn.x * (off + 0.75), cc.y - du.y * tw2 / 2 + dn.y * (off + 0.75), { angle: -ang * 180 / Math.PI }); };
       if (!two) put(lb[0], 0);
       else { put(lb[0], -1.3); const hw = Math.max(doc.getTextWidth(lb[0]), doc.getTextWidth(lb[1])) / 2 + 0.4; doc.line(cc.x - du.x * hw, cc.y - du.y * hw, cc.x + du.x * hw, cc.y + du.y * hw); put(lb[1], 1.3); }
