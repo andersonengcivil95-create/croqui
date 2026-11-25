@@ -239,11 +239,17 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn primary" id="openApply">Aplicar largura</button>
       </div>
       <div class="row">
+        <label class="field num" style="max-width:170px"><span>Altura</span><input id="openH" inputmode="decimal" autocomplete="off" aria-label="Altura"><span>m</span></label>
+        <label class="field num" style="max-width:180px" id="openPsBox"><span>Peitoril</span><input id="openPs" inputmode="decimal" autocomplete="off" aria-label="Peitoril"><span>m</span></label>
+        <button class="btn" id="openHApply">Aplicar</button>
+        <button class="btn" id="openBath" title="Janela de banheiro">Banheiro 0,60 / 1,50</button>
+      </div>
+      <div class="row">
         <button class="btn" id="openHinge" title="Trocar o lado da dobradiça">⇄ Trocar dobradiça</button>
         <button class="btn" id="openSide" title="Abrir para dentro ou para fora">↕ Abrir para o outro lado</button>
         <button class="btn danger" id="openDel">Apagar</button>
       </div>
-      <p class="note" id="openNote">Arraste a porta ao longo da parede com a ferramenta Medir.</p>
+      <p class="note" id="openNote">Arraste a porta ao longo da parede com a ferramenta Medida.</p>
     </div>
 
     <!-- painel: terreno -->
@@ -530,6 +536,10 @@ function openGeom(o) {
   const hinge = o.hinge ? p2 : p1, other = o.hinge ? p1 : p2, side = o.side ? mul(n, -1) : n;
   return { w, L, u, n, c, ow, p1, p2, hinge, other, side, leaf: add(hinge, mul(side, ow)), t: TH(w) };
 }
+const openH = o => o.h || (o.kind === "door" ? 2.1 : 1.0);
+const openPs = o => o.ps ?? 1.1;
+function openLabel(o, g) { return o.kind === "door" ? ["P " + fmt(g.ow) + "x" + fmt(openH(o))] : [fmt(g.ow) + "x" + fmt(openH(o)), fmt(openPs(o))]; }
+function openLabelSide(g) { const mid = add(g.w.a, mul(g.u, g.c)); return dot(sub(centroid(), mid), g.n) >= 0 ? g.n : mul(g.n, -1); }
 function arcPts(g, steps = 14) {
   const a0 = Math.atan2(g.side.y, g.side.x), a1v = sub(g.other, g.hinge), a1 = Math.atan2(a1v.y, a1v.x);
   let d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
@@ -559,14 +569,22 @@ function drawOpenings() {
       ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.beginPath();
       arcPts(g).forEach((q, i) => { const s2 = toS(q); i ? ctx.lineTo(s2.x, s2.y) : ctx.moveTo(s2.x, s2.y); }); ctx.stroke(); ctx.setLineDash([]);
     }
-    // largura
+    // largura x altura (e peitoril da janela, abaixo do traço)
     if (view.k * g.ow > 34) {
-      const m = toS(add(g.w.a, mul(g.u, g.c))), back = o.kind === "door" ? mul(g.side, -1) : g.n;
-      const tp = { x: m.x + back.x * (tw / 2 + 9), y: m.y + back.y * (tw / 2 + 9) };
+      const lines = openLabel(o, g), m = toS(add(g.w.a, mul(g.u, g.c)));
+      const back = o.kind === "door" ? mul(g.side, -1) : openLabelSide(g);
       let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+      const two = lines.length > 1, dimOn = showDim(g.w) && opt.dimMode === "face", dist0 = tw / 2 + (two ? (dimOn ? 46 : 20) : (dimOn ? 34 : 9));
+      const tp = { x: m.x + back.x * dist0, y: m.y + back.y * dist0 };
       ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang);
       ctx.font = "500 10.5px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.fillText((o.kind === "door" ? "P " : "J ") + fmt(g.ow), 0, 0); ctx.restore();
+      ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.strokeStyle = ctx.fillStyle;
+      if (!two) ctx.fillText(lines[0], 0, 0);
+      else {
+        const wd = Math.max(ctx.measureText(lines[0]).width, ctx.measureText(lines[1]).width) + 4;
+        ctx.fillText(lines[0], 0, -7.5); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-wd / 2, 0.5); ctx.lineTo(wd / 2, 0.5); ctx.stroke(); ctx.fillText(lines[1], 0, 8.5);
+      }
+      ctx.restore();
     }
   }
   ctx.lineCap = "square";
@@ -596,14 +614,16 @@ function openOpening(o) {
   const door = o.kind === "door";
   $("openTitle").textContent = door ? "Porta" : "Janela";
   $("openHinge").hidden = !door; $("openSide").hidden = !door;
-  $("openNote").textContent = (door ? "Arraste a porta" : "Arraste a janela") + " ao longo da parede com a ferramenta Medir.";
+  $("openNote").textContent = (door ? "Arraste a porta" : "Arraste a janela") + " ao longo da parede com a ferramenta Medida.";
   const box = $("openSizes"); box.textContent = "";
   const lab = document.createElement("span"); lab.className = "note"; lab.textContent = "Largura:"; box.appendChild(lab);
   for (const v of OPEN_SIZES[o.kind]) {
     const b = document.createElement("button"); b.className = "btn" + (Math.abs(v - o.w) < 1e-6 ? " on" : ""); b.textContent = fmt(v);
     b.onclick = () => setOpenW(v); box.appendChild(b);
   }
-  $("openW").value = fmt(o.w); $("sheetOpen").hidden = false; draw();
+  $("openW").value = fmt(o.w); $("openH").value = fmt(openH(o)); $("openPs").value = fmt(openPs(o));
+  $("openPsBox").hidden = door; $("openBath").hidden = door;
+  $("sheetOpen").hidden = false; draw();
 }
 function setOpenW(v) {
   const o = curOpen(); if (!o) return; const g = openGeom(o);
@@ -1012,6 +1032,12 @@ function buildDxf() {
   for (const w of S.walls) { line("PAREDE_EIXO", w.a, w.b); const wf = wallFaces(w); for (const [a, b] of wf.lines) line("PAREDE", a, b); for (const [a, b] of wf.caps) line("PAREDE", a, b); }
   for (const o of S.openings) {
     const gm = openGeom(o); if (!gm) continue;
+    { let ang = Math.atan2(gm.u.y, gm.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+      const lb = openLabel(o, gm), ly = o.kind === "door" ? "PORTA" : "JANELA", mid = add(gm.w.a, mul(gm.u, gm.c)), rot = -ang * 180 / Math.PI;
+      const back = o.kind === "door" ? mul(gm.side, -1) : openLabelSide(gm), du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
+      const c0 = add(mid, mul(back, gm.t / 2 + (lb.length > 1 ? (showDim(gm.w) ? 0.75 : 0.35) : 0.18)));
+      if (lb.length === 1) text(ly, c0, 0.12, lb[0], rot);
+      else { text(ly, add(c0, mul(dn, -0.12)), 0.12, lb[0], rot); line(ly, add(c0, mul(du, -0.4)), add(c0, mul(du, 0.4))); text(ly, add(c0, mul(dn, 0.13)), 0.12, lb[1], rot); } }
     if (o.kind === "window") { for (const fr of [-0.25, 0, 0.25]) { const off = mul(gm.n, fr * gm.t); line("JANELA", add(gm.p1, off), add(gm.p2, off)); } }
     else {
       line("PORTA", gm.hinge, gm.leaf);
@@ -1051,8 +1077,8 @@ function buildRevit() {
     formato: "croqui-anderson-revit", versao: 1, unidades: "metros", eixoY: "para cima (igual Revit/CAD)", referenciaParede: "eixo",
     titulo: S.title || "Croqui", data: new Date().toISOString().slice(0, 10),
     paredes: S.walls.map(w => ({ id: w.id, inicio: P(w.a), fim: P(w.b), espessura: TH(w), comprimento: Math.round(dist(w.a, w.b) * 1000) / 1000 })),
-    portas: S.openings.filter(o => o.kind === "door").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, distanciaDoInicio: Math.round(gm.c * 1000) / 1000, dobradica: P(gm.hinge), abrePara: P(add(gm.hinge, gm.side)) }; }).filter(Boolean),
-    janelas: S.openings.filter(o => o.kind === "window").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, distanciaDoInicio: Math.round(gm.c * 1000) / 1000 }; }).filter(Boolean),
+    portas: S.openings.filter(o => o.kind === "door").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, altura: openH(o), distanciaDoInicio: Math.round(gm.c * 1000) / 1000, dobradica: P(gm.hinge), abrePara: P(add(gm.hinge, gm.side)) }; }).filter(Boolean),
+    janelas: S.openings.filter(o => o.kind === "window").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, altura: openH(o), peitoril: openPs(o), distanciaDoInicio: Math.round(gm.c * 1000) / 1000 }; }).filter(Boolean),
     ambientes: S.texts.map(t => ({ nome: t.s, ponto: P(t), area: Math.round(areaOf(t) * 100) / 100 })),
     terreno: S.lot ? S.lot.pts.map(P) : null,
     areas: { terreno: Math.round(r.terreno * 100) / 100, construida: Math.round(r.construida * 100) / 100, ocupacao: r.ocupacao }
@@ -1738,6 +1764,13 @@ $("wallFlip").onclick = () => { const w = curWall(); if (!w) return; snapshot();
 $("wallDel").onclick = () => { const w = curWall(); if (!w) return; snapshot(); S.walls = S.walls.filter(x => x !== w); S.openings = S.openings.filter(o => o.wall !== w.id); closeSheets(); after(); };
 $("openApply").onclick = () => { const v = parseLen($("openW").value); if (!v) { toast("Digite a largura em metros, ex.: 0,80"); return; } setOpenW(v); };
 $("openW").addEventListener("keydown", e => { if (e.key === "Enter") $("openApply").click(); });
+$("openHApply").onclick = () => {
+  const o = curOpen(); if (!o) return; const h = parseLen($("openH").value), ps = o.kind === "window" ? parseLen($("openPs").value) : null;
+  if (!h || (o.kind === "window" && ps === null)) { toast("Digite a altura" + (o.kind === "window" ? " e o peitoril" : "") + " em metros"); return; }
+  snapshot(); o.h = clean(h); if (o.kind === "window") o.ps = clean(ps); after(); openOpening(o);
+};
+for (const id of ["openH", "openPs"]) $(id).addEventListener("keydown", e => { if (e.key === "Enter") $("openHApply").click(); });
+$("openBath").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.w = Math.min(0.6, openGeom(o) ? openGeom(o).L : 0.6); o.h = 0.6; o.ps = 1.5; after(); openOpening(o); };
 $("openHinge").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.hinge = !o.hinge; after(); };
 $("openSide").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.side = !o.side; after(); };
 $("openDel").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); S.openings = S.openings.filter(x => x !== o); closeSheets(); after(); };
@@ -1858,7 +1891,7 @@ $("fileOpen").onchange = e => {
       S = { title: String(o.title || ""), walls: o.walls.filter(w => w && w.a && w.b).map(w => ({ id: typeof w.id === "string" ? w.id.slice(0, 40) : nid(), a: { x: +w.a.x, y: +w.a.y }, b: { x: +w.b.x, y: +w.b.y }, flip: !!w.flip, fixB: !!w.fixB, dim: !!w.dim, t: [0.1, 0.12, 0.15, 0.2].includes(+w.t) ? +w.t : 0.15 })),
             lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
             inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
-            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge })),
+            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
             dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })) };
       closeSheets(); after(); fit(); toast("Projeto aberto");
@@ -1979,6 +2012,17 @@ $("expPdf").onclick = () => {
     else {
       const h = P(g.hinge), lf = P(g.leaf); doc.setLineWidth(0.3); doc.line(h.x, h.y, lf.x, lf.y);
       doc.setLineWidth(0.12); const ap = arcPts(g, 16).map(P); for (let i = 1; i < ap.length; i++) doc.line(ap[i - 1].x, ap[i - 1].y, ap[i].x, ap[i].y);
+    }
+    // largura x altura / peitoril
+    if (g.ow * mm >= 4) {
+      let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+      const lb = openLabel(o, g), back = o.kind === "door" ? mul(g.side, -1) : openLabelSide(g), du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
+      const two = lb.length > 1, c = P(add(add(g.w.a, mul(g.u, g.c)), mul(back, g.t / 2))), dimOn = showDim(g.w) && opt.dimMode === "face", d0 = two ? (dimOn ? 7.2 : 3.6) : (dimOn ? 7.4 : 1.8);
+      const cc = { x: c.x + back.x * d0, y: c.y + back.y * d0 };
+      doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setLineWidth(0.1);
+      const put = (str, off) => { const tw2 = doc.getTextWidth(str); doc.text(str, cc.x - du.x * tw2 / 2 + dn.x * (off + 0.75), cc.y - du.y * tw2 / 2 + dn.y * (off + 0.75), { angle: -ang * 180 / Math.PI }); };
+      if (!two) put(lb[0], 0);
+      else { put(lb[0], -1.3); const hw = Math.max(doc.getTextWidth(lb[0]), doc.getTextWidth(lb[1])) / 2 + 0.4; doc.line(cc.x - du.x * hw, cc.y - du.y * hw, cc.x + du.x * hw, cc.y + du.y * hw); put(lb[1], 1.3); }
     }
   }
   doc.setLineCap("butt");
