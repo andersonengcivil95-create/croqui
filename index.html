@@ -83,6 +83,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 .qa b{font-family:var(--font-num);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
 .qa span{font-size:11.5px;color:var(--ink-soft);letter-spacing:.04em;text-transform:uppercase}
 @media (max-width:560px){.hide-sm{display:none}.btn{padding:0 10px}.brand small{display:none}}
+@media (min-width:900px){.sheet{left:auto;top:12px;bottom:auto;right:max(12px,env(safe-area-inset-right,0px));width:390px;border:1px solid var(--line);border-radius:16px;max-height:calc(100% - 24px);box-shadow:0 10px 30px rgba(0,0,0,.3)}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -96,6 +97,8 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
     <label class="btn" title="Espessura das paredes novas">▮ <select id="optThick" aria-label="Espessura da parede" style="background:transparent;border:0;outline:0;font-weight:600">
       <option value="0.10">10 cm</option><option value="0.12">12 cm</option><option value="0.15" selected>15 cm</option><option value="0.20">20 cm</option></select></label>
     <button class="btn on" id="optRound" title="Arredondar medidas a cada 5 cm"><span>5 cm</span></button>
+    <label class="btn" title="Cotas pelo eixo da parede ou pelas faces (externa e interna)"><span class="hide-sm">Cotas</span> <select id="optDimMode" aria-label="Tipo de cota" style="background:transparent;border:0;outline:0;font-weight:600">
+      <option value="face" selected>ext./int.</option><option value="axis">eixo</option></select></label>
     <button class="btn" id="optDims" title="Mostrar a medida de todas as paredes, mesmo as que você ainda não indicou">⟷ <span class="hide-sm">Todas as cotas</span></button>
     <button class="btn" id="btnAreas" title="Quadro de áreas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 10v10"/></svg><span class="hide-sm">Áreas</span></button>
     <button class="btn" id="btnFit" title="Enquadrar o desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="hide-sm">Enquadrar</span></button>
@@ -118,6 +121,12 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <div class="row">
         <label class="field num"><input id="wallLen" inputmode="decimal" autocomplete="off" aria-label="Medida da parede"><span>m</span></label>
         <button class="btn primary" id="wallApply">Aplicar medida</button>
+      </div>
+      <div class="row" role="group" aria-label="A medida digitada é">
+        <span class="note">A medida digitada é:</span>
+        <button class="btn" data-ref="axis" title="Do meio de uma parede ao meio da outra">Eixo</button>
+        <button class="btn" data-ref="ext" title="Face de fora da parede">Externa</button>
+        <button class="btn" data-ref="int" title="Face de dentro (vão livre)">Interna</button>
       </div>
       <div id="wallDistBox" style="display:flex;flex-direction:column;gap:8px">
         <div class="row" style="justify-content:space-between">
@@ -142,6 +151,44 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn danger" id="wallDel">Apagar parede</button>
       </div>
       <p class="note">Enter já seleciona a próxima parede. O quadradinho amarelo marca a ponta que fica parada.</p>
+    </div>
+
+    <!-- painel: seleção de várias paredes -->
+    <div class="sheet" id="sheetPick" hidden>
+      <h3><span id="pickTitle">Paredes selecionadas</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row">
+        <span class="note" style="min-width:90px">Deslocar:</span>
+        <label class="field num" style="max-width:150px"><span>X</span><input id="pickDx" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Deslocamento em X"><span>m</span></label>
+        <label class="field num" style="max-width:150px"><span>Y</span><input id="pickDy" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Deslocamento em Y"><span>m</span></label>
+        <button class="btn primary" id="pickMove">Mover</button>
+        <button class="btn" id="pickCopy">Copiar</button>
+      </div>
+      <div class="row" id="pickThick" role="group" aria-label="Espessura das paredes selecionadas">
+        <span class="note" style="margin-right:4px">Espessura:</span>
+        <button class="btn" data-t="0.10">10 cm</button><button class="btn" data-t="0.12">12 cm</button><button class="btn" data-t="0.15">15 cm</button><button class="btn" data-t="0.20">20 cm</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="pickDimOn">Mostrar cotas</button>
+        <button class="btn" id="pickDimOff">Tirar cotas</button>
+        <button class="btn" id="pickAll">Selecionar tudo</button>
+        <button class="btn" id="pickNone">Limpar seleção</button>
+        <button class="btn danger" id="pickDel">Apagar</button>
+      </div>
+      <p class="note hide-sm">Toque nas paredes para juntar ou tirar da seleção. Arraste no vazio para fazer uma janela: da esquerda para a direita pega o que está todo dentro; da direita para a esquerda pega o que cruza. Arraste uma parede selecionada para mover todas. Y positivo é para baixo.</p>
+    </div>
+
+    <!-- painel: medir -->
+    <div class="sheet" id="sheetMeasure" hidden>
+      <h3><span>Medir</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row" style="align-items:baseline">
+        <b id="msrVal" style="font-family:var(--font-num);font-size:26px;font-weight:600">0,00 m</b>
+        <span class="note" id="msrSub"></span>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="msrKeep">Fixar como cota</button>
+        <button class="btn" id="msrNew">Nova medição</button>
+      </div>
+      <p class="note">O ímã pega ponta de parede, meio, canto das faces, porta e janela, e o pé da perpendicular. Para apagar uma cota fixa, use Apagar.</p>
     </div>
 
     <!-- painel: texto -->
@@ -237,6 +284,8 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
   <nav class="tools" aria-label="Ferramentas">
     <button class="tool on" data-tool="draw" title="Desenhar parede (L)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21l3.5-1 12-12-2.5-2.5-12 12z"/><path d="M14 6l2.5 2.5"/></svg>Parede</button>
     <button class="tool" data-tool="select" title="Indicar medida (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8v8M21 8v8M3 12h18M7 10l-4 2 4 2M17 10l4 2-4 2"/></svg>Medida</button>
+    <button class="tool" data-tool="pick" title="Selecionar paredes (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h5M3 3v5M21 3h-5M21 3v5M3 21h5M3 21v-5" stroke-dasharray="0"/><path d="M11 10l9 4-4 1.5L14.5 20z"/></svg>Selecionar</button>
+    <button class="tool" data-tool="measure" title="Medir distância (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 16l13-13 5 5-13 13z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2"/></svg>Medir</button>
     <button class="tool" data-tool="ink" title="Pincel: escrever à mão (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.5 2.5l3 3L10 17l-4 1 1-4z"/><path d="M3 21c2-1 3-3 2-4"/></svg>Pincel</button>
     <button class="tool" data-tool="text" title="Nome do cômodo (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5h14M12 5v14M9 19h6"/></svg>Texto</button>
     <button class="tool" data-tool="door" title="Porta (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h4M17 21h4M7 21V7"/><path d="M7 7a14 14 0 0 1 10 14" stroke-dasharray="2 2.5"/></svg>Porta</button>
@@ -260,11 +309,13 @@ let ctx = cv.getContext("2d");
 const STORE = "croqui-anderson-v1";
 
 /* ---------- estado ---------- */
-let S = { walls: [], texts: [], openings: [], inks: [], lot: null, title: "" };
+let S = { walls: [], texts: [], openings: [], inks: [], dims: [], lot: null, title: "" };
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
 const view = { k: 50, ox: 0, oy: 0 };          // tela = mundo(m) * k + o
-const opt = { ortho: true, round: true, thick: 0.15, allDims: false };
+const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "face", lenRef: null };
+const multi = new Set();   // paredes da ferramenta Selecionar
+let msr = { a: null, b: null, hover: null };
 const showDim = w => opt.allDims || !!w.dim;
 const TH = w => (w && w.t) || 0.15;
 const wpx = t => Math.max(2, t * view.k);
@@ -285,14 +336,14 @@ const EXAMPLE = () => {
   [0, 1, 4, 5, 6].forEach(i => ex.walls[i].dim = true);
   const O = (wi, pos, w, kind, side) => ({ id: nid(), wall: ex.walls[wi].id, pos, w, kind, side: !!side, hinge: false });
   ex.openings = [O(0, 2, 1.5, "window"), O(0, 7, 1.2, "window"), O(2, 8, 1.0, "window"), O(3, 6, 0.9, "door"), O(4, 6, 0.8, "door"), O(4, 2.25, 0.8, "door"), O(5, 1.0, 0.8, "door", true), O(6, 1.2, 0.6, "door")];
-  ex.inks = [];
+  ex.inks = []; ex.dims = [];
   ex.lot = { pts: [{ x: -1.5, y: -5 }, { x: 11.5, y: -5 }, { x: 11.5, y: 13 }, { x: -1.5, y: 13 }], front: 2 };
   return ex;
 };
 
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
+  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
   return null;
 }
 function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
@@ -316,7 +367,7 @@ function segDist(p, a, b) {
   const ab = sub(b, a), t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / (dot(ab, ab) || 1)));
   return { d: dist(p, add(a, mul(ab, t))), t, q: add(a, mul(ab, t)) };
 }
-function fmt(m) { return m.toFixed(2).replace(".", ","); }
+function fmt(m) { return (Math.round(m * 100 + (m >= 0 ? 1e-6 : -1e-6)) / 100).toFixed(2).replace(".", ","); }
 function parseLen(s) {
   s = String(s).trim().replace(/\s/g, "").replace(",", ".").replace(/m$/i, "");
   let v = parseFloat(s); if (!isFinite(v) || v <= 0) return null;
@@ -431,6 +482,41 @@ function dimInfo(w, c) {
   let ang = Math.atan2(u.y, u.x);
   if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
   return { L, u, n, mid, ang };
+}
+
+// trechos de cota de uma parede: pelo eixo (um) ou pelas faces (externa por fora, interna por dentro)
+function dimSegs(w, c) {
+  const { L, n, ang } = dimInfo(w, c);
+  const axis = [{ a: w.a, b: w.b, n, L, ang, base: TH(w) / 2, inner: false }];
+  if (opt.dimMode !== "face") return axis;
+  const F = faceEnds(w); if (!F) return axis;
+  const fo = dot(F.n, n) > 0 ? 1 : -1;
+  // cada face é quebrada onde outra parede encosta em T daquele lado (cota de cada cômodo)
+  const segs = f => {
+    const o = add(w.a, mul(F.n, f * F.h)), s0 = F.sEnd.a[String(f)], s1 = F.sEnd.b[String(f)];
+    const cuts = [];
+    for (const X of S.walls) {
+      if (X === w) continue;
+      for (const [P, Q] of [[X.a, X.b], [X.b, X.a]]) {
+        const r = segDist(P, w.a, w.b); if (r.d > 1e-3 || r.t < 1e-3 || r.t > 1 - 1e-3) continue;
+        const v = sub(Q, P), lv = len(v); if (lv < 0.02 || dot(v, F.n) * f <= 0) continue;
+        const sinA = Math.abs(dot(mul(v, 1 / lv), F.n)) || 1, sp = dot(sub(P, w.a), F.u), hx = TH(X) / 2 / sinA;
+        cuts.push([sp - hx, sp + hx]);
+      }
+    }
+    cuts.sort((x, y) => x[0] - y[0]);
+    const out = []; let c0 = s0;
+    for (const [g0, g1] of cuts) { if (g0 > c0 + 0.01) out.push([c0, Math.min(g0, s1)]); c0 = Math.max(c0, g1); }
+    if (s1 > c0 + 0.01) out.push([c0, s1]);
+    return out.map(([x0, x1]) => ({ a: add(o, mul(F.u, x0)), b: add(o, mul(F.u, x1)), L: x1 - x0 }));
+  };
+  return [...segs(fo).map(g => ({ ...g, n, ang, base: 0, inner: false })), ...segs(-fo).map(g => ({ ...g, n: mul(n, -1), ang, base: 0, inner: true }))];
+}
+function measureOf(w, ref) {
+  if (ref === "axis") return dist(w.a, w.b);
+  const F = faceEnds(w); if (!F) return dist(w.a, w.b);
+  const { n } = dimInfo(w, centroid()), fo = dot(F.n, n) > 0 ? 1 : -1, f = ref === "ext" ? fo : -fo;
+  return F.sEnd.b[String(f)] - F.sEnd.a[String(f)];
 }
 
 /* ---------- portas e janelas ---------- */
@@ -759,9 +845,9 @@ function zipOne(name, data) {
   return new Blob([lh.buffer, nm, data, ch.buffer, nm, end.buffer]);
 }
 function latin1(str) { const out = new Uint8Array(str.length); for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); out[i] = c < 256 ? c : 63; } return out; }
-function wallFaces(w) {
-  // linhas das duas faces, cortadas nos cantos, nos encontros em T e nas portas/janelas
-  const L = dist(w.a, w.b); if (L < 0.02) return { lines: [], caps: [] };
+function faceEnds(w) {
+  // onde cada face (f = 1 / -1, lado da normal) começa e termina ao longo do eixo, já cortada nos cantos e encontros em T
+  const L = dist(w.a, w.b); if (L < 0.02) return null;
   const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x }, h = TH(w) / 2;
   const sEnd = { a: { "1": 0, "-1": 0, cap: true }, b: { "1": L, "-1": L, cap: true } };
   const lineHit = (p1, d1, p2, d2) => { const den = d1.x * d2.y - d1.y * d2.x; if (Math.abs(den) < 1e-9) return null; const q = sub(p2, p1); return (q.x * d2.y - q.y * d2.x) / den; };
@@ -795,6 +881,12 @@ function wallFaces(w) {
       sEnd[end].cap = false;
     } else if (shared.length > 1) sEnd[end].cap = false;
   }
+  return { L, u, n, h, sEnd };
+}
+function wallFaces(w) {
+  // linhas das duas faces, cortadas nos cantos, nos encontros em T e nas portas/janelas
+  const F = faceEnds(w); if (!F) return { lines: [], caps: [] };
+  const { L, u, n, h, sEnd } = F;
   // vãos de portas e janelas
   const gaps = S.openings.filter(o => o.wall === w.id).map(openGeom).filter(Boolean).map(g => [g.c - g.ow / 2, g.c + g.ow / 2]).sort((x, y) => x[0] - y[0]);
   const lines = [], caps = [];
@@ -833,10 +925,20 @@ function buildDxf() {
   const cen = centroid();
   for (const w of S.walls) {
     if (!showDim(w)) continue;
-    const { L, u, n, mid, ang } = dimInfo(w, cen), off = TH(w) / 2 + 0.4;
-    const a2 = add(w.a, mul(n, off)), b2 = add(w.b, mul(n, off));
-    line("COTA", a2, b2); line("COTA", add(w.a, mul(n, TH(w) / 2 + 0.1)), add(w.a, mul(n, off + 0.1))); line("COTA", add(w.b, mul(n, TH(w) / 2 + 0.1)), add(w.b, mul(n, off + 0.1)));
-    text("COTA", add(mul(add(w.a, w.b), .5), mul(n, off + 0.15)), 0.15, fmt(L), -ang * 180 / Math.PI);
+    for (const sg of dimSegs(w, cen)) {
+      if (sg.L < 0.01) continue;
+      const off = sg.base + (sg.inner ? 0.45 : 0.4), n = sg.n, a2 = add(sg.a, mul(n, off)), b2 = add(sg.b, mul(n, off));
+      line("COTA", a2, b2);
+      if (!sg.inner) { line("COTA", add(sg.a, mul(n, sg.base + 0.1)), add(sg.a, mul(n, off + 0.1))); line("COTA", add(sg.b, mul(n, sg.base + 0.1)), add(sg.b, mul(n, off + 0.1))); }
+      const u = mul(sub(sg.b, sg.a), 1 / (sg.L || 1)), tk = mul(add(u, n), 0.06);
+      for (const q of [a2, b2]) line("COTA", sub(q, tk), add(q, tk));
+      text("COTA", add(mul(add(sg.a, sg.b), .5), mul(n, off + (sg.inner ? 0.13 : 0.15))), sg.inner ? 0.12 : 0.15, fmt(sg.L), -sg.ang * 180 / Math.PI);
+    }
+  }
+  for (const d of S.dims || []) {
+    const { L, u, n, ang } = dimNormal(d.a, d.b), tk = mul(add(u, n), 0.06);
+    line("COTA", d.a, d.b); for (const q of [d.a, d.b]) line("COTA", sub(q, tk), add(q, tk));
+    text("COTA", add(mul(add(d.a, d.b), .5), mul(n, 0.15)), 0.15, fmt(L), -ang * 180 / Math.PI);
   }
   for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
   if (S.lot) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
@@ -866,7 +968,7 @@ function resize() {
   W = r.width; H = r.height; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); draw();
 }
 let live = null, rawStroke = null, eraseTrail = null;
-const COL = { bg: "#1c4c9e", grid1: "rgba(255,255,255,.07)", grid5: "rgba(255,255,255,.16)", wall: "#ffffff", dim: "rgba(235,243,255,.92)", acc: "#ffcf4a", ink: "rgba(255,255,255,.45)" };
+const COL = { bg: "#1c4c9e", grid1: "rgba(255,255,255,.07)", grid5: "rgba(255,255,255,.16)", wall: "#ffffff", dim: "rgba(235,243,255,.92)", dimIn: "rgba(190,215,255,.85)", acc: "#ffcf4a", ink: "rgba(255,255,255,.45)" };
 
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -880,7 +982,7 @@ function draw() {
   // parede em duas faces (estilo BIM): traço cheio por fora, miolo pintado com o fundo
   const FACE = 1.6;
   for (const pass of [0, 1]) for (const w of S.walls) {
-    const isSel = sel && sel.type === "wall" && sel.id === w.id;
+    const isSel = (sel && sel.type === "wall" && sel.id === w.id) || (tool === "pick" && multi.has(w.id));
     const a = toS(w.a), b = toS(w.b), full = wpx(TH(w));
     if (pass === 1 && full - 2 * FACE < 1.5) continue;
     ctx.strokeStyle = pass ? COL.bg : (isSel ? COL.acc : COL.wall);
@@ -889,7 +991,8 @@ function draw() {
   }
   drawOpenings();
   drawInks();
-  for (const w of S.walls) if (showDim(w)) drawDim(w, c, sel && sel.type === "wall" && sel.id === w.id);
+  for (const w of S.walls) if (showDim(w)) drawDim(w, c, (sel && sel.type === "wall" && sel.id === w.id) || (tool === "pick" && multi.has(w.id)));
+  drawFixedDims();
   // textos
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (const t of S.texts) {
@@ -919,6 +1022,7 @@ function draw() {
     ctx.strokeStyle = COL.acc; ctx.lineWidth = wl;
     ctx.beginPath(); live.forEach((p, i) => { const s = toS(p); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); ctx.stroke();
   }
+  drawPickBox(); drawMeasure();
   if (eraseTrail) { ctx.strokeStyle = "rgba(255,138,128,.8)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(eraseTrail.x, eraseTrail.y, 14, 0, Math.PI * 2); ctx.stroke(); }
   // escala gráfica
   let m = 1; const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50];
@@ -944,30 +1048,43 @@ function drawGrid() {
     ctx.stroke();
   }
 }
-function drawDim(w, c, isSel) {
-  const { L, u, n, mid, ang } = dimInfo(w, c);
-  const a = toS(w.a), b = toS(w.b), off = 14 + wpx(TH(w)) / 2;
-  const nS = n; // mesma orientação na tela
-  const a2 = { x: a.x + nS.x * off, y: a.y + nS.y * off }, b2 = { x: b.x + nS.x * off, y: b.y + nS.y * off };
-  const col = isSel ? COL.acc : COL.dim;
-  ctx.strokeStyle = col; ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(a.x + nS.x * (off - 6), a.y + nS.y * (off - 6)); ctx.lineTo(a.x + nS.x * (off + 4), a.y + nS.y * (off + 4));
-  ctx.moveTo(b.x + nS.x * (off - 6), b.y + nS.y * (off - 6)); ctx.lineTo(b.x + nS.x * (off + 4), b.y + nS.y * (off + 4));
+function dimLineS(A, B, n, off, label, col, ang, small) {
+  const v = sub(B, A), Ls = len(v) || 1, u = mul(v, 1 / Ls);
+  const a2 = add(A, mul(n, off)), b2 = add(B, mul(n, off));
+  ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath();
+  if (off > 5) {
+    ctx.moveTo(A.x + n.x * (off - 6), A.y + n.y * (off - 6)); ctx.lineTo(A.x + n.x * (off + 4), A.y + n.y * (off + 4));
+    ctx.moveTo(B.x + n.x * (off - 6), B.y + n.y * (off - 6)); ctx.lineTo(B.x + n.x * (off + 4), B.y + n.y * (off + 4));
+  }
   ctx.moveTo(a2.x, a2.y); ctx.lineTo(b2.x, b2.y);
-  // tiques a 45°
-  const t = { x: (u.x + nS.x) * 3.5, y: (u.y + nS.y) * 3.5 };
+  const t = { x: (u.x + n.x) * 3.5, y: (u.y + n.y) * 3.5 };
   ctx.moveTo(a2.x - t.x, a2.y - t.y); ctx.lineTo(a2.x + t.x, a2.y + t.y);
   ctx.moveTo(b2.x - t.x, b2.y - t.y); ctx.lineTo(b2.x + t.x, b2.y + t.y);
   ctx.stroke();
-  const label = fmt(L);
-  const pm = toS(mid); const tp = { x: pm.x + nS.x * (off + 9), y: pm.y + nS.y * (off + 9) };
+  if (Ls < 16) return;
+  const pm = mul(add(A, B), 0.5), tp = add(pm, mul(n, off + (small ? 8 : 9)));
   ctx.save(); ctx.translate(tp.x, tp.y); ctx.rotate(ang);
-  ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = (small ? "500 10.5px" : "600 12px") + " 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   const tw = ctx.measureText(label).width;
-  ctx.fillStyle = COL.bg; ctx.fillRect(-tw / 2 - 3, -8, tw + 6, 16);
+  ctx.fillStyle = COL.bg; ctx.fillRect(-tw / 2 - 3, -7.5, tw + 6, 15);
   ctx.fillStyle = col; ctx.fillText(label, 0, 0);
   ctx.restore();
+}
+function drawDim(w, c, isSel) {
+  for (const g of dimSegs(w, c)) {
+    if (g.L < 0.01) continue;
+    const off = g.base * view.k + (g.inner ? 20 : 14);
+    dimLineS(toS(g.a), toS(g.b), g.n, off, fmt(g.L), isSel ? COL.acc : (g.inner ? COL.dimIn : COL.dim), g.ang, g.inner);
+  }
+}
+function dimNormal(a, b) {
+  const v = sub(b, a), L = len(v) || 1, u = mul(v, 1 / L); let n = { x: u.y, y: -u.x };
+  if (n.y > 1e-6 || (Math.abs(n.y) <= 1e-6 && n.x > 0)) n = mul(n, -1);
+  let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+  return { L, u, n, ang };
+}
+function drawFixedDims() {
+  for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); dimLineS(toS(d.a), toS(d.b), n, 0, fmt(L), COL.dim, ang, false); }
 }
 
 /* ---------- área do cômodo (polígono fechado em volta do texto) ---------- */
@@ -1024,6 +1141,144 @@ function inside(p, poly) {
 }
 
 /* ---------- interação ---------- */
+/* ---------- Selecionar (várias paredes) ---------- */
+let exporting = false, pickBox = null; // {a, b} na tela
+function pickWalls() { return S.walls.filter(w => multi.has(w.id)); }
+function drawPickBox() {
+  if (exporting || !pickBox) return;
+  const { a, b } = pickBox, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), wd = Math.abs(b.x - a.x), ht = Math.abs(b.y - a.y);
+  const cross = b.x < a.x;
+  ctx.fillStyle = cross ? "rgba(120,230,150,.10)" : "rgba(140,190,255,.12)"; ctx.fillRect(x, y, wd, ht);
+  ctx.strokeStyle = cross ? "#8ee6a0" : "#9cc6ff"; ctx.lineWidth = 1.2; ctx.setLineDash(cross ? [6, 4] : []);
+  ctx.strokeRect(x + .5, y + .5, wd, ht); ctx.setLineDash([]);
+}
+function segRectHit(A, B, r) {
+  const inR = q => q.x >= r.x0 && q.x <= r.x1 && q.y >= r.y0 && q.y <= r.y1;
+  if (inR(A) || inR(B)) return true;
+  const C = [{ x: r.x0, y: r.y0 }, { x: r.x1, y: r.y0 }, { x: r.x1, y: r.y1 }, { x: r.x0, y: r.y1 }];
+  const cr = (p1, p2, p3, p4) => { const d = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x); return d(p1, p2, p3) * d(p1, p2, p4) < 0 && d(p3, p4, p1) * d(p3, p4, p2) < 0; };
+  for (let i = 0; i < 4; i++) if (cr(A, B, C[i], C[(i + 1) % 4])) return true;
+  return false;
+}
+function boxSelect(a, b) {
+  const r = { x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) }, cross = b.x < a.x;
+  const inR = q => q.x >= r.x0 && q.x <= r.x1 && q.y >= r.y0 && q.y <= r.y1;
+  let n = 0;
+  for (const w of S.walls) { const A = toS(w.a), B = toS(w.b); if (cross ? segRectHit(A, B, r) : (inR(A) && inR(B))) { multi.add(w.id); n++; } }
+  return n;
+}
+function showPick() {
+  for (const id of [...multi]) if (!S.walls.some(w => w.id === id)) multi.delete(id);
+  const n = multi.size;
+  if (!n) { $("sheetPick").hidden = true; draw(); return; }
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetMeasure"]) $(id).hidden = true;
+  $("pickTitle").textContent = n === 1 ? "1 parede selecionada" : n + " paredes selecionadas";
+  const ws = pickWalls(), t0 = TH(ws[0]), same = ws.every(w => Math.abs(TH(w) - t0) < 1e-6);
+  document.querySelectorAll("#pickThick [data-t]").forEach(b => b.classList.toggle("on", same && Math.abs(t0 - +b.dataset.t) < 1e-6));
+  $("sheetPick").hidden = false; draw();
+}
+function movePicked(dx, dy, copy) {
+  const ws = pickWalls(); if (!ws.length) return;
+  snapshot();
+  if (copy) {
+    const map = new Map(), fresh = [];
+    for (const w of ws) { const c = { ...w, id: nid(), a: { x: clean(w.a.x + dx), y: clean(w.a.y + dy) }, b: { x: clean(w.b.x + dx), y: clean(w.b.y + dy) } }; delete c.fixB; map.set(w.id, c.id); fresh.push(c); }
+    S.walls.push(...fresh);
+    for (const o of S.openings.filter(o => map.has(o.wall))) S.openings.push({ ...o, id: nid(), wall: map.get(o.wall) });
+    multi.clear(); fresh.forEach(w => multi.add(w.id));
+  } else {
+    for (const r of pickRefs()) { r.pt.x = clean(r.o.x + dx); r.pt.y = clean(r.o.y + dy); }
+    dropZero();
+  }
+  after(); showPick();
+}
+function pickRefs() {
+  // pontas das paredes selecionadas + pontas de outras paredes encostadas nelas (ficam ligadas, como o "stretch" do CAD)
+  const ws = pickWalls(), pts = []; for (const w of ws) pts.push(w.a, w.b);
+  const refs = [], seen = new Set();
+  for (const x of S.walls) for (const e of ["a", "b"]) {
+    const q = x[e]; if (seen.has(q)) continue;
+    if (multi.has(x.id) || pts.some(pp => dist(pp, q) < 1e-4)) { seen.add(q); refs.push({ pt: q, o: { x: q.x, y: q.y } }); }
+  }
+  return refs;
+}
+
+/* ---------- Medir (DIST do CAD) ---------- */
+function snapCands() {
+  const out = [];
+  for (const w of S.walls) {
+    out.push({ p: w.a, k: "end" }, { p: w.b, k: "end" }, { p: mul(add(w.a, w.b), .5), k: "mid" });
+    const f = wallFaces(w); for (const [a, b] of f.lines.concat(f.caps)) out.push({ p: a, k: "end" }, { p: b, k: "end" });
+  }
+  for (const o of S.openings) { const g = openGeom(o); if (g) out.push({ p: g.p1, k: "end" }, { p: g.p2, k: "end" }); }
+  if (S.lot) for (const q of S.lot.pts) out.push({ p: q, k: "end" });
+  for (const d of S.dims || []) out.push({ p: d.a, k: "end" }, { p: d.b, k: "end" });
+  return out;
+}
+function snapLines() {
+  const out = [];
+  for (const w of S.walls) { out.push([w.a, w.b]); const f = wallFaces(w); out.push(...f.lines); }
+  if (S.lot) S.lot.pts.forEach((_, i) => out.push(lotSide(i)));
+  return out;
+}
+function snapAt(sp) {
+  const tol = 16, wp = toW(sp);
+  let best = null, bd = tol;
+  for (const c of snapCands()) { const d = dist(toS(c.p), sp) - (c.k === "end" ? 3 : 0); if (d < bd) { bd = d; best = { p: { x: c.p.x, y: c.p.y }, k: c.k }; } }
+  if (best) return best;
+  const lines = snapLines();
+  if (msr.a && !msr.b) { // perpendicular a partir do primeiro ponto
+    let pb = null, pd = tol;
+    for (const [a, b] of lines) { const v = sub(b, a), L2 = dot(v, v); if (L2 < 1e-9) continue; const t = dot(sub(msr.a, a), v) / L2; if (t < -1e-6 || t > 1 + 1e-6) continue; const f = add(a, mul(v, t)), d = dist(toS(f), sp); if (d < pd) { pd = d; pb = f; } }
+    if (pb) return { p: pb, k: "perp" };
+  }
+  let nb = null, nd = 12;
+  for (const [a, b] of lines) { const r = segDist(sp, toS(a), toS(b)); if (r.d < nd) { nd = r.d; nb = add(a, mul(sub(b, a), r.t)); } }
+  if (nb) return { p: nb, k: "near" };
+  return { p: { x: opt.round ? r5(wp.x) : wp.x, y: opt.round ? r5(wp.y) : wp.y }, k: "free" };
+}
+function drawMeasure() {
+  if (exporting || tool !== "measure") return;
+  const h = msr.hover, end = msr.b || (msr.a && h ? h.p : null);
+  if (msr.a && end) {
+    const A = toS(msr.a), B = toS(end);
+    ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.setLineDash([]);
+    const L = dist(msr.a, end);
+    if (L > 0.001) {
+      const m = mul(add(A, B), .5), lab = fmt(L) + " m";
+      ctx.font = "600 13px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const tw = ctx.measureText(lab).width; ctx.fillStyle = COL.acc; ctx.fillRect(m.x - tw / 2 - 6, m.y - 22, tw + 12, 20);
+      ctx.fillStyle = "#1b2a44"; ctx.fillText(lab, m.x, m.y - 12);
+    }
+    ctx.fillStyle = COL.acc; ctx.beginPath(); ctx.arc(A.x, A.y, 4, 0, Math.PI * 2); ctx.fill();
+    if (msr.b) { ctx.beginPath(); ctx.arc(B.x, B.y, 4, 0, Math.PI * 2); ctx.fill(); }
+  }
+  if (h && !(msr.a && msr.b)) {
+    const q = toS(h.p); ctx.strokeStyle = COL.acc; ctx.lineWidth = 2; ctx.beginPath();
+    if (h.k === "end") ctx.rect(q.x - 6, q.y - 6, 12, 12);
+    else if (h.k === "mid") { ctx.moveTo(q.x, q.y - 7); ctx.lineTo(q.x + 7, q.y + 5); ctx.lineTo(q.x - 7, q.y + 5); ctx.closePath(); }
+    else if (h.k === "perp") { ctx.moveTo(q.x - 7, q.y + 6); ctx.lineTo(q.x + 7, q.y + 6); ctx.moveTo(q.x, q.y + 6); ctx.lineTo(q.x, q.y - 7); }
+    else if (h.k === "near") { ctx.moveTo(q.x - 6, q.y - 6); ctx.lineTo(q.x + 6, q.y + 6); ctx.moveTo(q.x + 6, q.y - 6); ctx.lineTo(q.x - 6, q.y + 6); ctx.moveTo(q.x - 6, q.y - 6); ctx.lineTo(q.x + 6, q.y - 6); ctx.moveTo(q.x - 6, q.y + 6); ctx.lineTo(q.x + 6, q.y + 6); }
+    else { ctx.moveTo(q.x - 8, q.y); ctx.lineTo(q.x + 8, q.y); ctx.moveTo(q.x, q.y - 8); ctx.lineTo(q.x, q.y + 8); }
+    ctx.stroke();
+  }
+}
+function msrCommit(h) {
+  if (!msr.a || msr.b) { msr = { a: h.p, b: null, hover: h }; $("sheetMeasure").hidden = true; showHint("Agora toque no segundo ponto."); draw(); return; }
+  msr.b = h.p; msr.hover = null;
+  const d = sub(msr.b, msr.a), L = len(d);
+  let ang = Math.atan2(-d.y, d.x) * 180 / Math.PI; if (ang < 0) ang += 180; if (ang >= 180) ang -= 180;
+  $("msrVal").textContent = fmt(L) + " m";
+  $("msrSub").textContent = "ΔX " + fmt(Math.abs(d.x)) + "   ΔY " + fmt(Math.abs(d.y)) + "   ângulo " + ang.toFixed(1).replace(".", ",") + "°";
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick"]) $(id).hidden = true;
+  $("sheetMeasure").hidden = false; draw();
+}
+function hitDim(sp) {
+  let best = null, bd = 10;
+  for (const d of S.dims || []) { const r = segDist(sp, toS(d.a), toS(d.b)); if (r.d < bd) { bd = r.d; best = d; } }
+  return best;
+}
+
 const ptrs = new Map();
 let penMode = false;
 let drag = null; // {mode, ...}
@@ -1059,13 +1314,19 @@ cv.addEventListener("pointerdown", ev => {
   }
   if (ptrs.size > 2) return;
   if (ev.pointerType === "pen" && !penMode) { penMode = true; toast("Caneta detectada: a caneta desenha, o dedo só move e dá zoom."); }
-  const fingerOnly = penMode && ev.pointerType === "touch" && (tool === "draw" || tool === "erase" || tool === "ink");
+  const fingerOnly = penMode && ev.pointerType === "touch" && (tool === "draw" || tool === "erase" || tool === "ink" || tool === "measure");
   if (ev.button === 1 || ev.button === 2 || tool === "pan" || fingerOnly) { drag = { mode: "pan", last: p }; return; }
   if (tool === "draw") { rawStroke = [p]; drag = { mode: "draw" }; }
   else if (tool === "ink") { const w0 = toW(p); inkCur = { id: nid(), c: opt.inkColor, pts: [[clean(w0.x), clean(w0.y)]] }; drag = { mode: "ink", last: p }; }
   else if (tool === "erase") { drag = { mode: "erase", did: false }; eraseAt(p); }
   else if (tool === "text") { drag = { mode: "textTap", start: p }; }
   else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
+  else if (tool === "measure") { msr.hover = snapAt(p); drag = { mode: "msr" }; draw(); }
+  else if (tool === "pick") {
+    const w = hitWall(p);
+    if (w) { const was = multi.has(w.id); multi.add(w.id); drag = { mode: "pickTap", w, was, start: p, startW: toW(p) }; draw(); }
+    else drag = { mode: "pickBox", start: p };
+  }
   else if (tool === "lot") {
     const si = hitLotSide(p);
     if (si >= 0) drag = { mode: "lotTap", si, start: p };
@@ -1090,7 +1351,11 @@ cv.addEventListener("pointerdown", ev => {
 });
 cv.addEventListener("pointermove", ev => {
   const p = local(ev);
-  if (!ptrs.has(ev.pointerId)) { if (tool === "erase" && ev.pointerType === "mouse") { eraseTrail = p; draw(); } return; }
+  if (!ptrs.has(ev.pointerId)) {
+    if (tool === "erase" && ev.pointerType === "mouse") { eraseTrail = p; draw(); }
+    else if (tool === "measure" && ev.pointerType !== "touch" && !(msr.a && msr.b)) { msr.hover = snapAt(p); draw(); }
+    return;
+  }
   ptrs.set(ev.pointerId, p);
   if (!drag) return;
   if (drag.mode === "pinch" && ptrs.size >= 2) {
@@ -1117,6 +1382,20 @@ cv.addEventListener("pointermove", ev => {
     return;
   }
   if (drag.mode === "erase") { eraseTrail = p; eraseAt(p); return; }
+  if (drag.mode === "msr") { msr.hover = snapAt(p); draw(); return; }
+  if (drag.mode === "pickBox") { if (dist(p, drag.start) > 6) { pickBox = { a: drag.start, b: p }; draw(); } return; }
+  if (drag.mode === "pickTap" && dist(p, drag.start) > 8) {
+    snapshot(); drag = { mode: "pickMove", refs: pickRefs(), startW: drag.startW };
+    $("sheetPick").hidden = true;
+  }
+  if (drag.mode === "pickMove") {
+    const wp = toW(p); let dx = wp.x - drag.startW.x, dy = wp.y - drag.startW.y;
+    if (opt.ortho) { const a = Math.abs(Math.atan2(dy, dx)) % (Math.PI / 2); if (a < 0.26) dy = 0; else if (a > Math.PI / 2 - 0.26) dx = 0; }
+    if (opt.round) { dx = r5(dx); dy = r5(dy); }
+    drag.dx = dx; drag.dy = dy;
+    for (const r of drag.refs) { r.pt.x = clean(r.o.x + dx); r.pt.y = clean(r.o.y + dy); }
+    draw(); return;
+  }
   if (drag.mode === "open") {
     if (!drag.moved && dist(p, drag.start) < 6) return;
     if (!drag.moved) { snapshot(); drag.moved = true; }
@@ -1183,6 +1462,13 @@ function endPtr(ev) {
     } else draw();
   } else if (d.mode === "erase") { eraseTrail = null; if (d.did) after(); else draw(); }
   else if (d.mode === "filTap") { if (dist(p, d.start) < 10) filletPick(p); }
+  else if (d.mode === "msr") { const h = snapAt(p); msrCommit(h); }
+  else if (d.mode === "pickBox") {
+    if (pickBox) { const n = boxSelect(pickBox.a, pickBox.b); pickBox = null; if (!n) toast("Nenhuma parede na janela"); showPick(); }
+    else { multi.clear(); $("sheetPick").hidden = true; draw(); }
+  }
+  else if (d.mode === "pickTap") { if (d.was) multi.delete(d.w.id); showPick(); }
+  else if (d.mode === "pickMove") { dropZero(); after(); showPick(); if (d.dx || d.dy) toast("Movido " + fmt(Math.abs(d.dx || 0)) + " em X e " + fmt(Math.abs(d.dy || 0)) + " em Y"); }
   else if (d.mode === "textTap") { if (dist(p, d.start) < 10) openText(null, toW(p)); }
   else if (d.mode === "text") { if (d.moved) after(); else openText(d.t); }
   else if (d.mode === "open") { if (d.moved) after(); else openOpening(d.o); }
@@ -1208,8 +1494,10 @@ $("zIn").onclick = () => zoomBy(1.3); $("zOut").onclick = () => zoomBy(1 / 1.3);
 function eraseAt(p) {
   const op = hitOpen(p);
   const ik = op ? null : hitInk(p);
-  const w = op || ik ? null : hitWall(p, 14), t = hitText(p);
-  if (!w && !t && !op && !ik) { draw(); return; }
+  const dm = op || ik ? null : hitDim(p);
+  const w = op || ik || dm ? null : hitWall(p, 14), t = hitText(p);
+  if (!w && !t && !op && !ik && !dm) { draw(); return; }
+  if (dm) { if (!drag.did) { snapshot(); drag.did = true; } S.dims = S.dims.filter(x => x !== dm); }
   if (!drag.did) { snapshot(); drag.did = true; }
   if (ik) S.inks = S.inks.filter(x => x !== ik);
   if (!drag.did) { snapshot(); drag.did = true; }
@@ -1224,25 +1512,34 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 
 /* ---------- painéis ---------- */
 function closeSheets() {
-  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas"]) $(id).hidden = true;
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
 function selectWall(w) {
   closeSheets(); sel = { type: "wall", id: w.id };
-  $("wallLen").value = w.dim ? fmt(dist(w.a, w.b)) : ""; $("wallLen").placeholder = "desenhada com ≈ " + fmt(dist(w.a, w.b));
+  const ref = curRef(); syncRef();
+  $("wallLen").value = w.dim ? fmt(measureOf(w, ref)) : ""; $("wallLen").placeholder = "desenhada com ≈ " + fmt(measureOf(w, ref));
   $("wallHideDim").hidden = !w.dim; $("sheetWall").hidden = false; syncThick(); renderDistRows(w); draw();
   if (matchMedia("(pointer:fine)").matches) setTimeout(() => { $("wallLen").focus(); $("wallLen").select(); }, 30);
 }
 function curWall() { return sel && sel.type === "wall" ? S.walls.find(w => w.id === sel.id) : null; }
+function curRef() { return opt.lenRef || (opt.dimMode === "face" ? "ext" : "axis"); }
+function syncRef() { const r = curRef(); document.querySelectorAll("[data-ref]").forEach(b => b.classList.toggle("on", b.dataset.ref === r)); }
+document.querySelectorAll("[data-ref]").forEach(b => b.addEventListener("click", () => {
+  opt.lenRef = b.dataset.ref; syncRef(); const w = curWall(); if (!w) return;
+  $("wallLen").placeholder = "desenhada com ≈ " + fmt(measureOf(w, opt.lenRef)); if (w.dim) $("wallLen").value = fmt(measureOf(w, opt.lenRef));
+}));
 $("wallApply").onclick = applyLen;
 $("wallLen").addEventListener("keydown", e => { if (e.key === "Enter") applyLen(); });
 function applyLen() {
   const w = curWall(); if (!w) return;
-  const v = parseLen($("wallLen").value);
-  if (!v) { toast("Digite a medida em metros, ex.: 3,50"); return; }
+  const typed = parseLen($("wallLen").value);
+  if (!typed) { toast("Digite a medida em metros, ex.: 3,50"); return; }
   const fixed = w.fixB ? w.b : w.a, moving = w.fixB ? w.a : w.b;
   const L = dist(fixed, moving); if (L < 1e-6) return;
+  const v = L + (typed - measureOf(w, curRef()));
+  if (v < 0.02) { toast("Essa medida deixa a parede sem tamanho"); return; }
   const u = mul(sub(moving, fixed), 1 / L), delta = v - L;
   snapshot();
   w.dim = true;
@@ -1258,13 +1555,13 @@ function applyLen() {
     for (const ww of S.walls) for (const e of ["a", "b"]) if (dist(ww[e], o) < 1e-6) { ww[e].x = clean(o.x + mv.x); ww[e].y = clean(o.y + mv.y); }
   }
   dropZero(); after();
-  toast("Medida aplicada: " + fmt(v) + " m");
+  toast("Medida aplicada: " + fmt(typed) + " m" + (curRef() === "ext" ? " (externa)" : curRef() === "int" ? " (interna)" : " (eixo)"));
   // segue para a próxima parede ligada que ainda não tem medida
   const endP = w.fixB ? w.a : w.b, startP = w.fixB ? w.b : w.a;
   const near = (q, r) => dist(q, r) < 1e-4;
   const nxt = S.walls.find(x => x !== w && !x.dim && (near(x.a, endP) || near(x.b, endP))) || S.walls.find(x => x !== w && !x.dim && (near(x.a, startP) || near(x.b, startP)));
   if (nxt) { if (near(nxt.b, endP) || near(nxt.b, startP)) nxt.fixB = true; selectWall(nxt); if (!matchMedia("(pointer:fine)").matches) setTimeout(() => $("wallLen").focus(), 30); }
-  else { $("wallLen").value = fmt(dist(w.a, w.b)); $("wallHideDim").hidden = false; }
+  else { $("wallLen").value = fmt(measureOf(w, curRef())); $("wallHideDim").hidden = false; }
 }
 function syncThick() { const w = curWall(); document.querySelectorAll("#wallThick [data-t]").forEach(b => b.classList.toggle("on", !!w && Math.abs(TH(w) - +b.dataset.t) < 1e-6)); }
 document.querySelectorAll("#wallThick [data-t]").forEach(b => b.addEventListener("click", () => {
@@ -1290,6 +1587,19 @@ $("lotRect").onclick = () => {
 };
 $("lotDel").onclick = () => { if (!S.lot) return; snapshot(); S.lot = null; closeSheets(); after(); };
 $("btnAreas").onclick = showAreas;
+const pickDelta = () => { const dx = $("pickDx").value.trim() ? parseLen($("pickDx").value.replace(/^-/, "")) : 0, dy = $("pickDy").value.trim() ? parseLen($("pickDy").value.replace(/^-/, "")) : 0; if (dx === null || dy === null) return null; return { dx: ($("pickDx").value.trim().startsWith("-") ? -1 : 1) * dx, dy: ($("pickDy").value.trim().startsWith("-") ? -1 : 1) * dy }; };
+$("pickMove").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite quanto mover em X e/ou Y (ex.: 1,50 ou -0,80)"); return; } movePicked(d.dx, d.dy, false); toast("Paredes movidas"); };
+$("pickCopy").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite a distância da cópia em X e/ou Y"); return; } movePicked(d.dx, d.dy, true); toast("Paredes copiadas"); };
+document.querySelectorAll("#pickThick [data-t]").forEach(b => b.addEventListener("click", () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.t = +b.dataset.t); after(); showPick(); }));
+$("pickDimOn").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.dim = true); after(); showPick(); };
+$("pickDimOff").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.dim = false); after(); showPick(); };
+$("pickAll").onclick = () => { S.walls.forEach(w => multi.add(w.id)); showPick(); };
+$("pickNone").onclick = () => { multi.clear(); showPick(); };
+$("pickDel").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); const ids = new Set(ws.map(w => w.id)); S.walls = S.walls.filter(w => !ids.has(w.id)); S.openings = S.openings.filter(o => !ids.has(o.wall)); multi.clear(); after(); showPick(); toast(ids.size + (ids.size === 1 ? " parede apagada" : " paredes apagadas")); };
+$("msrKeep").onclick = () => { if (!msr.a || !msr.b || dist(msr.a, msr.b) < 0.01) return; snapshot(); S.dims.push({ id: nid(), a: { x: clean(msr.a.x), y: clean(msr.a.y) }, b: { x: clean(msr.b.x), y: clean(msr.b.y) } }); msr = { a: null, b: null, hover: null }; $("sheetMeasure").hidden = true; after(); toast("Cota fixada"); };
+$("msrNew").onclick = () => { msr = { a: null, b: null, hover: null }; $("sheetMeasure").hidden = true; showHint("Toque no primeiro ponto."); draw(); };
+$("optDimMode").onchange = e => { opt.dimMode = e.target.value; try { localStorage.setItem(STORE + "-dm", opt.dimMode); } catch (er) {} draw(); toast(opt.dimMode === "face" ? "Cotas pelas faces: externa por fora, interna por dentro" : "Cotas pelo eixo das paredes"); };
+try { const dm = localStorage.getItem(STORE + "-dm"); if (dm === "axis" || dm === "face") { opt.dimMode = dm; $("optDimMode").value = dm; } } catch (er) {}
 $("expDxf").onclick = () => { if (!S.walls.length) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; } if (!downloads) offer(fileBase() + ".dxf", new Blob([latin1(buildDxf())])); else offer(fileBase() + "-dxf.zip", zipOne(fileBase() + ".dxf", latin1(buildDxf()))); $("expMsg").textContent = "O DXF vai dentro de um .zip (o celular não deixa salvar .dxf direto). Descompacte e abra no AutoCAD. Camadas: PAREDE, PORTA, JANELA, COTA, TEXTO, TERRENO."; };
 $("expRevit").onclick = () => { if (!S.walls.length) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; } offer(fileBase() + "-revit.json", JSON.stringify(buildRevit(), null, 1)); $("expMsg").textContent = "Mande este arquivo para o Claude do PC: ele monta as paredes, portas e janelas no Revit pelo Horizun, no template do escritório."; };
 $("wallSwap").onclick = () => { const w = curWall(); if (!w) return; w.fixB = !w.fixB; save(); draw(); };
@@ -1322,14 +1632,14 @@ $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk();
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
-$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], lot: null, title: "" }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], lot: null, title: "" }; multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
 $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
 function setTool(t) {
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Fillet: toque na primeira parede e depois na segunda. Elas se estendem ou cortam até formar o canto.", ink: "Pincel: escreva ou rabisque à mão livre. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela." }[t];
-  showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; closeSheets();
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Fillet: toque na primeira parede e depois na segunda. Elas se estendem ou cortam até formar o canto.", ink: "Pincel: escreva ou rabisque à mão livre. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
+  showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
   cv.style.cursor = t === "pan" ? "grab" : t === "erase" ? "cell" : t === "text" ? "text" : "crosshair";
 }
@@ -1355,9 +1665,11 @@ document.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
   else if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
-  else if (k === "escape") closeSheets();
+  else if (k === "escape") { if (tool === "pick") multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); }
+  else if ((e.ctrlKey || e.metaKey) && k === "a" && tool === "pick") { e.preventDefault(); $("pickAll").click(); }
+  else if ((k === "delete" || k === "backspace") && tool === "pick" && multi.size) $("pickDel").click();
   else if ((k === "delete" || k === "backspace") && sel) { if (sel.type === "wall") $("wallDel").click(); else if (sel.type === "open") $("openDel").click(); else { snapshot(); S.texts = S.texts.filter(t => t.id !== sel.id); closeSheets(); after(); } }
-  else if (k === "l") setTool("draw"); else if (k === "v") setTool("select"); else if (k === "t") setTool("text"); else if (k === "e") setTool("erase"); else if (k === "h") setTool("pan"); else if (k === "b") setTool("ink"); else if (k === "f") setTool("fillet"); else if (k === "g") setTool("lot"); else if (k === "p") setTool("door"); else if (k === "j") setTool("window");
+  else if (k === "l") setTool("draw"); else if (k === "v") setTool("select"); else if (k === "t") setTool("text"); else if (k === "e") setTool("erase"); else if (k === "h") setTool("pan"); else if (k === "b") setTool("ink"); else if (k === "f") setTool("fillet"); else if (k === "g") setTool("lot"); else if (k === "p") setTool("door"); else if (k === "j") setTool("window"); else if (k === "s") setTool("pick"); else if (k === "m") setTool("measure");
 });
 
 /* ---------- enquadrar ---------- */
@@ -1416,6 +1728,7 @@ $("fileOpen").onchange = e => {
             lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
             inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
             openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge })),
+            dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })) };
       closeSheets(); after(); fit(); toast("Projeto aberto");
     } catch (err) { $("expMsg").textContent = "Esse arquivo não é um projeto do Croqui."; }
@@ -1437,7 +1750,7 @@ $("expPng").onclick = () => {
   const kk = k * f;
   view.k = kk; view.ox = (pad - b.minx) * kk; view.oy = (pad + 0.8 - b.miny) * kk;
   W = cw / scale; H = chh / scale; dpr = scale;
-  if (!blue) Object.assign(COL, { bg: "#ffffff", grid1: "rgba(28,76,158,.06)", grid5: "rgba(28,76,158,.13)", wall: "#14306b", dim: "#14306b" });
+  if (!blue) Object.assign(COL, { bg: "#ffffff", grid1: "rgba(28,76,158,.06)", grid5: "rgba(28,76,158,.13)", wall: "#14306b", dim: "#14306b", dimIn: "#3a5a99" });
   const selSave = sel; sel = null;
   drawTo(g);
   // título
@@ -1452,7 +1765,7 @@ $("expPng").onclick = () => {
 };
 function drawTo(g) {
   // desenha usando a mesma rotina, trocando o contexto temporariamente
-  const orig = ctx; ctx = g; try { draw(); } finally { ctx = orig; }
+  const orig = ctx; ctx = g; exporting = true; try { draw(); } finally { ctx = orig; exporting = false; }
 }
 $("expPdf").onclick = () => {
   const b = bounds(); if (!b) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; }
@@ -1501,22 +1814,25 @@ $("expPdf").onclick = () => {
   doc.setLineCap("butt");
   // cotas
   const cen = centroid(); doc.setLineWidth(0.15); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
-  for (const w of S.walls) {
-    if (!showDim(w)) continue;
-    const { L, u, n, mid, ang } = dimInfo(w, cen);
-    const off = 2.6 + Math.max(0.35, TH(w) * mm) / 2, a = P(w.a), c2 = P(w.b);
+  const pdfDim = (A0, B0, n, off, label, ang, ext, small) => {
+    const a = P(A0), c2 = P(B0), u = (() => { const v = sub(c2, a), l = len(v) || 1; return mul(v, 1 / l); })();
     const a2 = { x: a.x + n.x * off, y: a.y + n.y * off }, b2 = { x: c2.x + n.x * off, y: c2.y + n.y * off };
-    doc.line(a.x + n.x * (off - 1.2), a.y + n.y * (off - 1.2), a.x + n.x * (off + 0.8), a.y + n.y * (off + 0.8));
-    doc.line(c2.x + n.x * (off - 1.2), c2.y + n.y * (off - 1.2), c2.x + n.x * (off + 0.8), c2.y + n.y * (off + 0.8));
+    if (ext) { doc.line(a.x + n.x * (off - 1.2), a.y + n.y * (off - 1.2), a.x + n.x * (off + 0.8), a.y + n.y * (off + 0.8)); doc.line(c2.x + n.x * (off - 1.2), c2.y + n.y * (off - 1.2), c2.x + n.x * (off + 0.8), c2.y + n.y * (off + 0.8)); }
     doc.line(a2.x, a2.y, b2.x, b2.y);
     const t = { x: (u.x + n.x) * 0.7, y: (u.y + n.y) * 0.7 };
     doc.line(a2.x - t.x, a2.y - t.y, a2.x + t.x, a2.y + t.y); doc.line(b2.x - t.x, b2.y - t.y, b2.x + t.x, b2.y + t.y);
-    const label = fmt(L), tw = doc.getTextWidth(label), pm = P(mid);
+    doc.setFontSize(small ? 6 : 7);
+    const tw = doc.getTextWidth(label), pm = { x: (a.x + c2.x) / 2, y: (a.y + c2.y) / 2 };
     const cxy = { x: pm.x + n.x * (off + 1.6), y: pm.y + n.y * (off + 1.6) };
     const du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
-    const sx = cxy.x - du.x * tw / 2 + dn.x * 0.9, sy = cxy.y - du.y * tw / 2 + dn.y * 0.9; // baseline
-    doc.text(label, sx, sy, { angle: -ang * 180 / Math.PI });
+    doc.text(label, cxy.x - du.x * tw / 2 + dn.x * 0.9, cxy.y - du.y * tw / 2 + dn.y * 0.9, { angle: -ang * 180 / Math.PI });
+  };
+  for (const w of S.walls) {
+    if (!showDim(w)) continue;
+    for (const sg of dimSegs(w, cen)) { if (sg.L < 0.01) continue; pdfDim(sg.a, sg.b, sg.n, sg.base * mm + (sg.inner ? 2.4 : 2.6), fmt(sg.L), sg.ang, !sg.inner, sg.inner); }
   }
+  for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); pdfDim(d.a, d.b, n, 0, fmt(L), ang, false, false); }
+  doc.setFontSize(7);
   // pincel
   doc.setLineCap("round"); doc.setLineJoin("round"); doc.setLineWidth(Math.max(0.2, INK_W * mm));
   for (const k of S.inks) { const pts = k.pts.map(q => P({ x: q[0], y: q[1] })); for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); }
@@ -1556,7 +1872,7 @@ $("expPdf").onclick = () => {
   if (q1) { doc.setFont("helvetica", "bold"); doc.text("QUADRO DE ÁREAS", qx, ty + 6.5); doc.setFont("helvetica", "normal"); doc.text(q1, qx, ty + 11.5); }
   if (q2) doc.text(q2, qx, ty + 16);
   // escala gráfica 1 m / 5 m
-  const sbm = pick.s >= 200 ? 10 : (pick.s >= 100 ? 5 : 2), sbx = pw - margin - sbm * mm, sby = ty + 10.5;
+  const sbm = pick.s >= 200 ? 10 : (pick.s >= 100 ? 5 : 2), sbx = pw - margin - sbm * mm, sby = ty - 6;
   doc.setLineWidth(0.25);
   for (let i = 0; i < sbm; i++) { if (i % 2 === 0) doc.setFillColor(20, 48, 107); else doc.setFillColor(255, 255, 255); doc.rect(sbx + i * mm, sby, mm, 1.4, "FD"); }
   doc.setFontSize(6.5); doc.text("0", sbx, sby + 4, { align: "center" }); doc.text(sbm + " m", sbx + sbm * mm, sby + 4, { align: "center" });
@@ -1566,6 +1882,7 @@ $("expPdf").onclick = () => {
 };
 
 /* ---------- início ---------- */
+window.__cq = { get S() { return S; }, view, toS: p => toS(p) };
 const saved = load();
 S = saved || EXAMPLE();
 if (!saved) setTimeout(() => toast("Este é um exemplo. Toque em Novo para começar o seu."), 600);
