@@ -101,6 +101,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <option value="face" selected>ext./int.</option><option value="axis">eixo</option></select></label>
     <button class="btn" id="optDims" title="Mostrar a medida de todas as paredes, mesmo as que você ainda não indicou">⟷ <span class="hide-sm">Todas as cotas</span></button>
     <button class="btn" id="btnAreas" title="Quadro de áreas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 10v10"/></svg><span class="hide-sm">Áreas</span></button>
+    <button class="btn" id="btnLayers" title="Camadas: mostrar ou esconder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><span class="hide-sm">Camadas</span></button>
     <button class="btn" id="btnFit" title="Enquadrar o desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="hide-sm">Enquadrar</span></button>
     <button class="btn" id="btnNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg><span class="hide-sm">Novo</span></button>
     <button class="btn primary" id="btnExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Salvar</button>
@@ -193,6 +194,13 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn danger" id="pickDel">Apagar</button>
       </div>
       <p class="note hide-sm">Toque nas paredes para juntar ou tirar da seleção. Arraste no vazio para fazer uma janela: da esquerda para a direita pega o que está todo dentro; da direita para a esquerda pega o que cruza. Arraste uma parede selecionada para mover todas. Y positivo é para baixo.</p>
+    </div>
+
+    <!-- painel: camadas -->
+    <div class="sheet" id="sheetLayers" hidden>
+      <h3><span>Camadas</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div id="layBody" style="display:flex;flex-direction:column;gap:10px"></div>
+      <p class="note">O que estiver desligado some da tela e também do PDF, da imagem e do DXF. Paredes, portas e janelas sempre aparecem.</p>
     </div>
 
     <!-- painel: modificar -->
@@ -322,6 +330,10 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <h3><span>Quadro de áreas</span><button class="x" data-close aria-label="Fechar">×</button></h3>
       <div id="areasBody" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px"></div>
       <p class="note" id="areasNote"></p>
+      <div id="esqBox" hidden style="display:flex;flex-direction:column;gap:4px">
+        <h3 style="margin-top:4px"><span>Quadro de esquadrias</span></h3>
+        <div id="esqBody" style="display:flex;flex-direction:column;gap:3px"></div>
+      </div>
     </div>
 
     <div class="sheet" id="sheetNew" hidden>
@@ -369,7 +381,11 @@ const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "f
 let ext1 = null, rectCtx = null;
 const multi = new Set();   // paredes da ferramenta Selecionar
 let msr = { a: null, b: null, hover: null };
-const showDim = w => opt.allDims || !!w.dim;
+const LAYERS = { dims: "Cotas", text: "Nomes e áreas", lbl: "Medidas de portas e janelas", ink: "Pincel", lot: "Terreno" };
+const lay = { dims: true, text: true, lbl: true, ink: true, lot: true };
+try { Object.assign(lay, JSON.parse(localStorage.getItem("croqui-anderson-v1-lay") || "{}")); } catch (e) {}
+const L_ = k => lay[k] !== false;
+const showDim = w => L_("dims") && (opt.allDims || !!w.dim);
 const TH = w => (w && w.t) || 0.15;
 const wpx = t => Math.max(2, t * view.k);
 let tool = "draw", sel = null;                  // sel: {type:'wall'|'text', id}
@@ -617,7 +633,7 @@ function drawOpenings() {
       arcPts(g).forEach((q, i) => { const s2 = toS(q); i ? ctx.lineTo(s2.x, s2.y) : ctx.moveTo(s2.x, s2.y); }); ctx.stroke(); ctx.setLineDash([]);
     }
     // largura x altura (e peitoril da janela, abaixo do traço)
-    if (view.k * g.ow > 34) {
+    if (view.k * g.ow > 34 && L_("lbl")) {
       const lines = openLabel(o, g), m = toS(add(g.w.a, mul(g.u, g.c)));
       const back = o.kind === "door" ? mul(g.side, -1) : openLabelSide(g);
       let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
@@ -804,7 +820,7 @@ function inkPath(pts) {
 }
 function drawInks() {
   ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = Math.max(1.6, INK_W * view.k);
-  for (const k of S.inks) { ctx.strokeStyle = k.c === "y" ? COL.acc : COL.wall; inkPath(k.pts); ctx.stroke(); }
+  if (L_("ink")) for (const k of S.inks) { ctx.strokeStyle = k.c === "y" ? COL.acc : COL.wall; inkPath(k.pts); ctx.stroke(); }
   if (inkCur) { ctx.strokeStyle = inkCur.c === "y" ? COL.acc : COL.wall; inkPath(inkCur.pts); ctx.stroke(); }
   ctx.lineCap = "square"; ctx.lineJoin = "miter";
 }
@@ -961,7 +977,7 @@ function sideRole(i) {
   return cr < 0 ? "Lateral direita" : "Lateral esquerda";
 }
 function drawLot() {
-  if (!S.lot) return;
+  if (!S.lot || !L_("lot")) return;
   const P = S.lot.pts.map(toS), n = P.length;
   ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.6; ctx.setLineDash([14, 4, 2, 4]); ctx.lineCap = "butt";
   ctx.beginPath(); P.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
@@ -1029,15 +1045,31 @@ function areasCalc() {
   }
   return r;
 }
+function esquadrias() {
+  const map = new Map();
+  for (const o of S.openings) {
+    const g = openGeom(o); if (!g) continue;
+    const k = o.kind + "|" + fmt(g.ow) + "|" + fmt(openH(o)) + "|" + (o.kind === "window" ? fmt(openPs(o)) : "");
+    if (!map.has(k)) map.set(k, { kind: o.kind, w: g.ow, h: openH(o), ps: o.kind === "window" ? openPs(o) : null, n: 0 });
+    map.get(k).n++;
+  }
+  const list = [...map.values()].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "door" ? -1 : 1) || a.w - b.w || a.h - b.h);
+  let pi = 0, ji = 0; for (const e of list) e.code = e.kind === "door" ? "P" + (++pi) : "J" + (++ji);
+  return list;
+}
+function esqText(e) { return e.code + "  " + (e.kind === "door" ? "Porta " : "Janela ") + fmt(e.w) + " x " + fmt(e.h) + (e.ps !== null ? "  peitoril " + fmt(e.ps) : "") + "  —  " + e.n + (e.n === 1 ? " un." : " un."); }
 function showAreas() {
   closeSheets(); const r = areasCalc(), box = $("areasBody"); box.textContent = "";
   const add_ = (label, val) => { const d = document.createElement("div"); d.className = "qa"; const sp = document.createElement("span"); sp.textContent = label; const bb = document.createElement("b"); bb.textContent = val; d.append(sp, bb); box.appendChild(d); };
   add_("Área do terreno", r.terreno ? fmt(r.terreno) + " m²" : "sem terreno");
   add_("Área construída", r.construida ? fmt(r.construida) + " m²" : "—");
   add_("Taxa de ocupação", r.ocupacao !== null ? (r.ocupacao * 100).toFixed(1).replace(".", ",") + " %" : "—");
-  add_("Soma dos cômodos", r.util ? fmt(r.util) + " m²" : "—");
+  add_("Área útil (cômodos)", r.util ? fmt(r.util) + " m²" : "—");
   for (const q of r.recuos) add_("Recuo " + q.role.toLowerCase(), fmt(q.d) + " m");
-  $("areasNote").textContent = "Área construída pelo contorno externo das paredes. Cômodos medidos pelo eixo das paredes (só os que têm nome). Recuos medidos da face externa até a divisa.";
+  $("areasNote").textContent = "Área construída pelo contorno externo das paredes. Cômodos com área útil, por dentro das paredes (só os que têm nome). Recuos medidos da face externa até a divisa.";
+  const eq = esquadrias(), eb = $("esqBody"); eb.textContent = "";
+  $("esqBox").hidden = !eq.length;
+  for (const e of eq) { const d = document.createElement("div"); d.className = "note"; d.style.fontFamily = "var(--font-num)"; d.textContent = esqText(e); eb.appendChild(d); }
   $("sheetAreas").hidden = false;
 }
 
@@ -1122,7 +1154,7 @@ function buildDxf() {
   for (const w of S.walls) { line("PAREDE_EIXO", w.a, w.b); const wf = wallFaces(w); for (const [a, b] of wf.lines) line("PAREDE", a, b); for (const [a, b] of wf.caps) line("PAREDE", a, b); }
   for (const o of S.openings) {
     const gm = openGeom(o); if (!gm) continue;
-    { let ang = Math.atan2(gm.u.y, gm.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+    if (L_("lbl")) { let ang = Math.atan2(gm.u.y, gm.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
       const lb = openLabel(o, gm), ly = o.kind === "door" ? "PORTA" : "JANELA", mid = add(gm.w.a, mul(gm.u, gm.c)), rot = -ang * 180 / Math.PI;
       const back = o.kind === "door" ? mul(gm.side, -1) : openLabelSide(gm), du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
       const c0 = add(mid, mul(back, gm.t / 2 + (lb.length > 1 ? (showDim(gm.w) ? 0.75 : 0.35) : 0.18)));
@@ -1149,14 +1181,14 @@ function buildDxf() {
       text("COTA", add(mul(add(sg.a, sg.b), .5), mul(n, off + (sg.inner ? 0.13 : 0.15))), sg.inner ? 0.12 : 0.15, fmt(sg.L), -sg.ang * 180 / Math.PI);
     }
   }
-  for (const d of S.dims || []) {
+  if (L_("dims")) for (const d of S.dims || []) {
     const { L, u, n, ang } = dimNormal(d.a, d.b), tk = mul(add(u, n), 0.06);
     line("COTA", d.a, d.b); for (const q of [d.a, d.b]) line("COTA", sub(q, tk), add(q, tk));
     text("COTA", add(mul(add(d.a, d.b), .5), mul(n, 0.15)), 0.15, fmt(L), -ang * 180 / Math.PI);
   }
-  for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
-  if (S.lot) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
-  for (const k of S.inks) for (let i = 1; i < k.pts.length; i++) line("ANOTACAO", { x: k.pts[i - 1][0], y: k.pts[i - 1][1] }, { x: k.pts[i][0], y: k.pts[i][1] });
+  if (L_("text")) for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
+  if (S.lot && L_("lot")) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
+  if (L_("ink")) for (const k of S.inks) for (let i = 1; i < k.pts.length; i++) line("ANOTACAO", { x: k.pts[i - 1][0], y: k.pts[i - 1][1] }, { x: k.pts[i][0], y: k.pts[i][1] });
   g(0, "ENDSEC", 0, "EOF");
   return out.join("\r\n") + "\r\n";
 }
@@ -1209,7 +1241,7 @@ function draw() {
   drawFixedDims();
   // textos
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  for (const t of S.texts) {
+  if (L_("text")) for (const t of S.texts) {
     const p = toS(t), isSel = sel && sel.type === "text" && sel.id === t.id;
     ctx.font = "600 13px Inter, system-ui, sans-serif";
     ctx.fillStyle = isSel ? COL.acc : "#ffffff";
@@ -1298,13 +1330,13 @@ function dimNormal(a, b) {
   return { L, u, n, ang };
 }
 function drawFixedDims() {
-  for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); dimLineS(toS(d.a), toS(d.b), n, 0, fmt(L), COL.dim, ang, false); }
+  if (L_("dims")) for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); dimLineS(toS(d.a), toS(d.b), n, 0, fmt(L), COL.dim, ang, false); }
 }
 
 /* ---------- área do cômodo (polígono fechado em volta do texto) ---------- */
 let facesCache = { key: "", list: [] };
 function facesList() {
-  const ck = JSON.stringify(S.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y]));
+  const ck = JSON.stringify(S.walls.map(w => [w.a.x, w.a.y, w.b.x, w.b.y, TH(w)]));
   if (facesCache.key === ck) return facesCache.list;
   const key = p => Math.round(p.x * 100) + "," + Math.round(p.y * 100);
   const nodes = new Map(); const edges = [];
@@ -1342,10 +1374,31 @@ function facesList() {
 }
 function polyArea(poly) { let A = 0; for (let i = 0; i < poly.length; i++) { const P = poly[i], Q = poly[(i + 1) % poly.length]; A += P.x * Q.y - Q.x * P.y; } return A / 2; }
 function polyPerim(poly) { let L = 0; for (let i = 0; i < poly.length; i++) L += dist(poly[i], poly[(i + 1) % poly.length]); return L; }
+function innerArea(poly) {
+  // recua cada lado do cômodo pela meia espessura da parede daquele lado e calcula a área que sobra (área útil)
+  const n = poly.length, L = [];
+  for (let i = 0; i < n; i++) {
+    const P = poly[i], Q = poly[(i + 1) % n], d = sub(Q, P), l = len(d); if (l < 1e-9) { L.push(null); continue; }
+    const u = mul(d, 1 / l); let nn = { x: -u.y, y: u.x };
+    const m = mul(add(P, Q), .5); if (!inside(add(m, mul(nn, 0.002)), poly)) nn = mul(nn, -1);
+    const w = S.walls.find(x => segDist(P, x.a, x.b).d < 1e-3 && segDist(Q, x.a, x.b).d < 1e-3), h = w ? TH(w) / 2 : 0;
+    L.push({ o: add(P, mul(nn, h)), u, nn, h, P });
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const A = L[(i - 1 + n) % n], B = L[i]; if (!A || !B) continue;
+    const den = A.u.x * B.u.y - A.u.y * B.u.x;
+    if (Math.abs(den) < 1e-6) { out.push(add(B.P, mul(B.nn, B.h))); continue; }
+    const q = sub(B.o, A.o), t = (q.x * B.u.y - q.y * B.u.x) / den; out.push(add(A.o, mul(A.u, t)));
+  }
+  return out.length >= 3 ? Math.abs(polyArea(out)) : 0;
+}
 function areaOf(t) {
-  let best = 0;
-  for (const f of facesList()) if (inside(t, f.poly) && (best === 0 || f.A < best)) best = f.A;
-  return best;
+  let best = null;
+  for (const f of facesList()) if (inside(t, f.poly) && (!best || f.A < best.A)) best = f;
+  if (!best) return 0;
+  if (best.Ai === undefined) best.Ai = innerArea(best.poly);
+  return best.Ai;
 }
 function inside(p, poly) {
   let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1884,7 +1937,7 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 
 /* ---------- painéis ---------- */
 function closeSheets() {
-  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect"]) $(id).hidden = true;
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
@@ -1936,9 +1989,24 @@ function applyLen() {
   if (nxt) { if (near(nxt.b, endP) || near(nxt.b, startP)) nxt.fixB = true; selectWall(nxt); if (!matchMedia("(pointer:fine)").matches) setTimeout(() => $("wallLen").focus(), 30); }
   else { $("wallLen").value = fmt(measureOf(w, curRef())); $("wallHideDim").hidden = false; }
 }
+function extSide(w) {
+  const L = dist(w.a, w.b); if (L < 0.05) return null;
+  const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x }, mid = mul(add(w.a, w.b), .5);
+  const free = d => !S.walls.some(x => x !== w && rayHit(add(mid, mul(d, 0.01)), d, x.a, x.b));
+  const fp = free(n), fn = free(mul(n, -1)); return fp === fn ? null : (fp ? n : mul(n, -1));
+}
+function setThick(w, t) {
+  // parede de fora: a face externa fica parada e a parede engrossa para dentro (como no Revit com linha de locação na face externa)
+  const old = TH(w); if (Math.abs(old - t) < 1e-6) return false;
+  const nOut = extSide(w), L = dist(w.a, w.b), u = mul(sub(w.b, w.a), 1 / (L || 1));
+  const colinear = S.walls.some(x => x !== w && [w.a, w.b].some(P => dist(x.a, P) < 1e-4 || dist(x.b, P) < 1e-4) && (() => { const lx = dist(x.a, x.b); if (lx < 0.05) return false; const ux = mul(sub(x.b, x.a), 1 / lx); return Math.abs(u.x * ux.y - u.y * ux.x) < 1e-3; })());
+  w.t = t;
+  if (nOut && !colinear) { moveWall(w, (old - t) / 2, nOut); return true; }
+  return false;
+}
 function syncThick() { const w = curWall(); document.querySelectorAll("#wallThick [data-t]").forEach(b => b.classList.toggle("on", !!w && Math.abs(TH(w) - +b.dataset.t) < 1e-6)); }
 document.querySelectorAll("#wallThick [data-t]").forEach(b => b.addEventListener("click", () => {
-  const w = curWall(); if (!w) return; snapshot(); w.t = +b.dataset.t; opt.thick = w.t; $("optThick").value = b.dataset.t; after(); syncThick();
+  const w = curWall(); if (!w) return; snapshot(); const kept = setThick(w, +b.dataset.t); opt.thick = w.t; $("optThick").value = b.dataset.t; after(); syncThick(); renderDistRows(w); if (kept) toast("Face de fora mantida; a parede engrossou para dentro");
 }));
 $("thickAll").onclick = () => { const w = curWall(); if (!w) return; snapshot(); const t = TH(w); S.walls.forEach(x => x.t = t); after(); toast("Todas as paredes com " + Math.round(t * 100) + " cm"); };
 $("optThick").onchange = e => { opt.thick = +e.target.value; try { localStorage.setItem(STORE + "-t", e.target.value); } catch (er) {} toast("Paredes novas com " + Math.round(opt.thick * 100) + " cm"); };
@@ -1960,6 +2028,15 @@ $("lotRect").onclick = () => {
 };
 $("lotDel").onclick = () => { if (!S.lot) return; snapshot(); S.lot = null; closeSheets(); after(); };
 $("btnAreas").onclick = showAreas;
+$("btnLayers").onclick = () => {
+  closeSheets(); const box = $("layBody"); box.textContent = "";
+  for (const [k, nm] of Object.entries(LAYERS)) {
+    const lb = document.createElement("label"); lb.className = "check"; const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = L_(k);
+    cb.onchange = () => { lay[k] = cb.checked; try { localStorage.setItem("croqui-anderson-v1-lay", JSON.stringify(lay)); } catch (e) {} draw(); };
+    lb.append(cb, document.createTextNode(" " + nm)); box.appendChild(lb);
+  }
+  $("sheetLayers").hidden = false;
+};
 $("pickRotL").onclick = () => rotatePicked(90); $("pickRotR").onclick = () => rotatePicked(-90);
 $("pickRot").onclick = () => { const v = parseFloat(($("pickAng").value || "").replace(",", ".")); if (!isFinite(v) || !v) { toast("Digite o ângulo em graus (positivo gira anti-horário)"); return; } rotatePicked(v); };
 $("pickMirX").onclick = () => mirrorPicked("x"); $("pickMirY").onclick = () => mirrorPicked("y");
@@ -1981,7 +2058,7 @@ $("offA").onclick = () => offMake(1); $("offB").onclick = () => offMake(-1);
 const pickDelta = () => { const dx = $("pickDx").value.trim() ? parseLen($("pickDx").value.replace(/^-/, "")) : 0, dy = $("pickDy").value.trim() ? parseLen($("pickDy").value.replace(/^-/, "")) : 0; if (dx === null || dy === null) return null; return { dx: ($("pickDx").value.trim().startsWith("-") ? -1 : 1) * dx, dy: ($("pickDy").value.trim().startsWith("-") ? -1 : 1) * dy }; };
 $("pickMove").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite quanto mover em X e/ou Y (ex.: 1,50 ou -0,80)"); return; } movePicked(d.dx, d.dy, false); toast("Paredes movidas"); };
 $("pickCopy").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite a distância da cópia em X e/ou Y"); return; } movePicked(d.dx, d.dy, true); toast("Paredes copiadas"); };
-document.querySelectorAll("#pickThick [data-t]").forEach(b => b.addEventListener("click", () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.t = +b.dataset.t); after(); showPick(); }));
+document.querySelectorAll("#pickThick [data-t]").forEach(b => b.addEventListener("click", () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => setThick(w, +b.dataset.t)); after(); showPick(); }));
 $("pickDimOn").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.dim = true); after(); showPick(); };
 $("pickDimOff").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.dim = false); after(); showPick(); };
 $("pickAll").onclick = () => { S.walls.forEach(w => multi.add(w.id)); showPick(); };
@@ -2172,7 +2249,8 @@ $("expPdf").onclick = () => {
   const b = bounds(); if (!b) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; }
   if (!window.jspdf) { $("expMsg").textContent = "O gerador de PDF não carregou. Verifique a internet e tente de novo."; return; }
   const sizes = [["a4", 297, 210], ["a3", 420, 297]];
-  const margin = 12, titleH = 22, cotaPad = 1.0; // m de folga para as cotas
+  const esq = esquadrias(), esqRows = Math.ceil(esq.length / 2);
+  const margin = 12, titleH = 22 + (esq.length ? 5 + esqRows * 3.4 : 0), cotaPad = 1.0; // m de folga para as cotas
   const bw = b.maxx - b.minx + cotaPad * 2, bh = b.maxy - b.miny + cotaPad * 2;
   const choice = $("expScale").value;
   let pick = null;
@@ -2195,7 +2273,7 @@ $("expPdf").onclick = () => {
   doc.setDrawColor(20, 48, 107); doc.setTextColor(20, 48, 107);
   doc.setLineWidth(0.3); doc.rect(margin / 2, margin / 2, pw - margin, ph - margin);
   // terreno
-  if (S.lot) {
+  if (S.lot && L_("lot")) {
     doc.setLineWidth(0.25); doc.setLineDashPattern([4, 1, 0.6, 1], 0);
     S.lot.pts.forEach((_, i) => { const [a, b2] = lotSide(i); const A = P(a), B = P(b2); doc.line(A.x, A.y, B.x, B.y); });
     doc.setLineDashPattern([], 0); doc.setFont("helvetica", "normal"); doc.setFontSize(7);
@@ -2232,11 +2310,11 @@ $("expPdf").onclick = () => {
     if (!showDim(w)) continue;
     for (const sg of dimSegs(w, cen)) { if (sg.L < 0.01) continue; pdfDim(sg.a, sg.b, sg.n, sg.base * mm + (sg.inner ? 2.4 : 2.6), fmt(sg.L), sg.ang, !sg.inner, sg.inner); }
   }
-  for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); pdfDim(d.a, d.b, n, 0, fmt(L), ang, false, false); }
+  if (L_("dims")) for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); pdfDim(d.a, d.b, n, 0, fmt(L), ang, false, false); }
   doc.setFontSize(7);
   // pincel
   doc.setLineCap("round"); doc.setLineJoin("round"); doc.setLineWidth(Math.max(0.2, INK_W * mm));
-  for (const k of S.inks) { const pts = k.pts.map(q => P({ x: q[0], y: q[1] })); for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); }
+  if (L_("ink")) for (const k of S.inks) { const pts = k.pts.map(q => P({ x: q[0], y: q[1] })); for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); }
   doc.setLineCap("butt");
   // portas e janelas
   for (const o of S.openings) {
@@ -2251,7 +2329,7 @@ $("expPdf").onclick = () => {
       doc.setLineWidth(0.12); const ap = arcPts(g, 16).map(P); for (let i = 1; i < ap.length; i++) doc.line(ap[i - 1].x, ap[i - 1].y, ap[i].x, ap[i].y);
     }
     // largura x altura / peitoril
-    if (g.ow * mm >= 4) {
+    if (g.ow * mm >= 4 && L_("lbl")) {
       let ang = Math.atan2(g.u.y, g.u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
       const lb = openLabel(o, g), back = o.kind === "door" ? mul(g.side, -1) : openLabelSide(g), du = { x: Math.cos(ang), y: Math.sin(ang) }, dn = { x: -du.y, y: du.x };
       const two = lb.length > 1, c = P(add(add(g.w.a, mul(g.u, g.c)), mul(back, g.t / 2))), dimOn = showDim(g.w) && opt.dimMode === "face", d0 = two ? (dimOn ? 7.2 : 3.6) : (dimOn ? 7.4 : 1.8);
@@ -2265,7 +2343,7 @@ $("expPdf").onclick = () => {
   doc.setLineCap("butt");
   // textos
   doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-  for (const t of S.texts) {
+  if (L_("text")) for (const t of S.texts) {
     const p = P(t); doc.text(t.s, p.x, p.y + 1, { align: "center" });
     const a = areaOf(t); if (a) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.text(fmt(a) + " m²", p.x, p.y + 4.4, { align: "center" }); doc.setFont("helvetica", "bold"); doc.setFontSize(8); }
   }
@@ -2276,10 +2354,18 @@ $("expPdf").onclick = () => {
   doc.setFont("helvetica", "normal"); doc.setFontSize(8);
   doc.text("Croqui sem valor de projeto", margin, ty + 11.5); doc.text("Medidas em metros", margin, ty + 16);
   doc.text("Escala 1:" + pick.s + "  ·  Folha " + pick.nm.toUpperCase() + "  ·  " + new Date().toLocaleDateString("pt-BR"), pw - margin, ty + 6.5, { align: "right" });
+  // quadro de esquadrias
+  if (esq.length) {
+    const ey = ty + 21; doc.setLineWidth(0.15); doc.line(margin / 2, ey - 1.5, pw - margin / 2, ey - 1.5);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.text("QUADRO DE ESQUADRIAS", margin, ey + 2.5);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+    const colW = (pw - margin * 2) / 2;
+    esq.forEach((e, i) => doc.text(esqText(e), margin + (i % 2) * colW, ey + 6 + Math.floor(i / 2) * 3.4));
+  }
   // quadro de áreas
   const ar = areasCalc(), qx = margin + 70;
   doc.setFontSize(7.5);
-  const q1 = [ar.terreno ? "Terreno: " + fmt(ar.terreno) + " m²" : null, ar.construida ? "Construída: " + fmt(ar.construida) + " m²" : null, ar.ocupacao !== null ? "Ocupação: " + (ar.ocupacao * 100).toFixed(1).replace(".", ",") + "%" : null, ar.util ? "Cômodos: " + fmt(ar.util) + " m²" : null].filter(Boolean).join("   ·   ");
+  const q1 = [ar.terreno ? "Terreno: " + fmt(ar.terreno) + " m²" : null, ar.construida ? "Construída: " + fmt(ar.construida) + " m²" : null, ar.ocupacao !== null ? "Ocupação: " + (ar.ocupacao * 100).toFixed(1).replace(".", ",") + "%" : null, ar.util ? "Útil: " + fmt(ar.util) + " m²" : null].filter(Boolean).join("   ·   ");
   const q2 = ar.recuos.length ? "Recuos: " + ar.recuos.map(q => q.role.toLowerCase() + " " + fmt(q.d)).join("  ·  ") : "";
   if (q1) { doc.setFont("helvetica", "bold"); doc.text("QUADRO DE ÁREAS", qx, ty + 6.5); doc.setFont("helvetica", "normal"); doc.text(q1, qx, ty + 11.5); }
   if (q2) doc.text(q2, qx, ty + 16);
