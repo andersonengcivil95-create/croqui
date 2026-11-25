@@ -108,6 +108,9 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 .wd.on{border-color:var(--accent);background:var(--paper)}
 .sk-ask{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;gap:6px;background:var(--chrome);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:3;width:min(360px,calc(100% - 32px))}
 .sk-ask input{flex:1;min-width:0;min-height:38px;border-radius:8px;border:1px solid var(--line);background:var(--paper-deep);padding:0 10px;user-select:text;-webkit-user-select:text}
+.nb-ed{position:absolute;z-index:4;display:flex;gap:4px;align-items:center;background:var(--accent);border-radius:10px;padding:4px;box-shadow:0 6px 20px rgba(0,0,0,.4);transform:translate(-50%,-50%)}
+.nb-ed input{width:84px;min-height:34px;border:0;border-radius:7px;background:#fff;color:#1b2a44;font-family:var(--font-num);font-weight:700;font-size:15px;text-align:center;user-select:text;-webkit-user-select:text}
+.nb-ed button{min-height:34px;padding:0 10px;border:0;border-radius:7px;background:#1b2a44;color:#fff;font-weight:700;cursor:pointer}
 </style>
 
 <div class="app">
@@ -182,10 +185,10 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       </div>
       <div id="wallDistBox" style="display:flex;flex-direction:column;gap:8px">
         <div class="row" style="justify-content:space-between">
-          <span class="note">Distância até as paredes vizinhas (digite e a parede anda):</span>
+          <span class="note">Distância até as paredes vizinhas (digite aqui ou toque no número amarelo na planta, e a parede anda):</span>
           <span class="row" style="gap:4px" role="group" aria-label="Medir entre">
-            <button class="btn on" id="distAxis" title="Distância entre os eixos (meio das paredes)">Eixo</button>
-            <button class="btn" id="distFace" title="Distância livre, de face a face">Face</button>
+            <button class="btn" id="distAxis" title="Distância entre os eixos (meio das paredes)">Eixo</button>
+            <button class="btn on" id="distFace" title="Medida interna do cômodo, de face a face">Interna (face)</button>
           </span>
         </div>
         <div id="wallDist" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -406,6 +409,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
     </div>
 
     <div class="toast" id="toast" hidden></div>
+    <div class="nb-ed" id="nbEd" hidden><input id="nbIn" inputmode="decimal" autocomplete="off" aria-label="Nova distância em metros"><button id="nbOk">OK</button></div>
   </div>
 
   <nav class="tools" aria-label="Ferramentas">
@@ -761,7 +765,7 @@ function setOpenW(v) {
 }
 
 /* ---------- distâncias entre paredes (estilo Revit) ---------- */
-opt.face = false;
+opt.face = true; // distâncias pela medida interna do cômodo (face a face), como no Revit
 function neighbors(w, withLot) {
   const L = dist(w.a, w.b); if (L < 0.05) return [];
   const u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x };
@@ -813,16 +817,30 @@ function renderDistRows(w) {
     const inp = document.createElement("input"); inp.id = "dist" + i; inp.inputMode = "decimal"; inp.autocomplete = "off"; inp.value = fmt(c.gap); inp.setAttribute("aria-label", lab.textContent);
     const un = document.createElement("span"); un.textContent = "m"; f.append(inp, un);
     const bt = document.createElement("button"); bt.className = "btn"; bt.textContent = "Mover parede";
-    const go = () => {
-      const v = parseLen(inp.value); if (v === null) { toast("Digite a distância em metros, ex.: 3,00"); return; }
-      const want = v + ((opt.face || !c.x) ? (TH(w) + (c.x ? TH(c.x) : 0)) / 2 : 0);
-      const m = c.d - Math.sign(c.d) * want;
-      snapshot(); moveWall(w, m, c.n); dropZero(); after(); selectWall(w); toast("Parede movida");
-    };
+    const go = () => nbApply(w, c, inp.value);
     bt.onclick = go; inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
     row.append(lab, f, bt); box.appendChild(row);
   });
 }
+function nbApply(w, c, txt) {
+  const v = parseLen(txt); if (v === null || v < 0) { toast("Digite a distância em metros, ex.: 3,00"); return false; }
+  const want = v + ((opt.face || !c.x) ? (TH(w) + (c.x ? TH(c.x) : 0)) / 2 : 0);
+  const m = c.d - Math.sign(c.d) * want;
+  snapshot(); moveWall(w, m, c.n); dropZero(); after(); if (tool === "select") selectWall(w);
+  toast((c.x ? "Vão" : "Recuo") + " agora com " + fmt(v) + " m. A parede andou " + fmt(Math.abs(m)) + " m");
+  return true;
+}
+// toque no número amarelo (cota temporária) abre a edição ali mesmo, como no Revit
+let nbHits = [], nbCur = null;
+function nbTap(p) {
+  const h = nbHits.find(q => Math.abs(p.x - q.x) <= q.hw && Math.abs(p.y - q.y) <= q.hh); if (!h) return false;
+  nbCur = h; const ed = $("nbEd"); ed.style.left = h.x + "px"; ed.style.top = h.y + "px"; ed.hidden = false;
+  $("nbIn").value = fmt(h.c.gap); setTimeout(() => { $("nbIn").focus(); $("nbIn").select(); }, 30);
+  return true;
+}
+function nbClose() { $("nbEd").hidden = true; nbCur = null; }
+$("nbOk").onclick = () => { const h = nbCur; if (!h) return; const v = $("nbIn").value; nbClose(); nbApply(h.w, h.c, v); };
+$("nbIn").addEventListener("keydown", e => { if (e.key === "Enter") $("nbOk").click(); else if (e.key === "Escape") nbClose(); e.stopPropagation(); });
 function tempDim(A, B, label) {
   const v = sub(B, A), L = len(v); if (L < 2) return;
   const u = mul(v, 1 / L), nn = { x: -u.y, y: u.x };
@@ -850,6 +868,7 @@ function groupLotDims() {
 }
 function drawNeighborDims() {
   if (exporting) return;
+  nbHits = [];
   if (tool === "pick" && multi.size) {
     for (const g of groupLotDims()) tempDim(toS(g.p), toS(g.foot), fmt(g.d));
     if (multi.size === 1) { const w = pickWalls()[0]; if (w) for (const c of neighbors(w, false)) drawOneNeighbor(w, c); }
@@ -873,6 +892,7 @@ function drawOneNeighbor(w, c) {
     const tw = ctx.measureText(label).width;
     ctx.fillStyle = COL.acc; ctx.fillRect(m.x - tw / 2 - 5, m.y - 9, tw + 10, 18);
     ctx.fillStyle = "#1b2a44"; ctx.fillText(label, m.x, m.y);
+    nbHits.push({ w, c, x: m.x, y: m.y, hw: tw / 2 + 14, hh: 18 });
   }
 }
 
@@ -1887,6 +1907,8 @@ cv.addEventListener("pointerdown", ev => {
   cv.setPointerCapture(ev.pointerId);
   const p = local(ev); ptrs.set(ev.pointerId, p);
   hideHint();
+  if (!$("nbEd").hidden) nbClose();
+  if (ptrs.size === 1 && (tool === "select" || tool === "pick") && nbTap(p)) { ptrs.delete(ev.pointerId); return; }
   if (ptrs.size === 2) { // pinça
     rawStroke = null; live = null; eraseTrail = null;
     if (drag && drag.mode === "vertex" && drag.moved) { /* mantém */ }
@@ -2119,6 +2141,7 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 
 /* ---------- painéis ---------- */
 function closeSheets() {
+  nbClose();
   for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
@@ -2768,7 +2791,7 @@ function skPdf(doc) { // uma página A4 deitada por folha de rascunho com algum 
 window.__sk = { set: skSet, get V() { return skV; }, get page() { return skPage; } };
 
 /* ---------- início ---------- */
-window.__cq = { get S() { return S; }, view, toS: p => toS(p) };
+window.__cq = { get S() { return S; }, view, toS: p => toS(p), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
 const saved = load();
 S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
