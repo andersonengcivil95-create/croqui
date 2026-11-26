@@ -358,6 +358,15 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       </div>
     </div>
 
+    <div class="sheet" id="sheetPhoto" hidden>
+      <h3><span id="phTitle">Foto</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div id="phBox" style="display:flex;justify-content:center"><img id="phImg" alt="Foto da medição" style="max-width:100%;max-height:46vh;border-radius:8px;display:block"></div>
+      <p class="note" id="phMsg" hidden></p>
+      <label class="field"><input id="phNote" autocomplete="off" maxlength="300" placeholder="Observação (ex.: trinca na parede, fiação exposta)" aria-label="Observação da foto"></label>
+      <div class="row"><button class="btn primary" id="phSave">Salvar observação</button><button class="btn" id="phRetake">Trocar foto</button><button class="btn danger" id="phDel">Apagar foto</button></div>
+    </div>
+    <input type="file" id="phFile" accept="image/*" capture="environment" hidden>
+
     <!-- painel: salvar / exportar -->
     <div class="sheet" id="sheetExport" hidden>
       <h3><span>Salvar e exportar</span><button class="x" data-close aria-label="Fechar">×</button></h3>
@@ -476,6 +485,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
     <button class="tool" data-tool="fillet" title="Modificar: canto (F), estender/cortar (X), quebrar (Q)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V9a5 5 0 0 1 5-5h11"/><path d="M4 4v3M4 4h3" stroke-dasharray="1.5 2"/></svg>Modificar</button>
     <button class="tool" data-tool="shape" title="Formas geométricas: linha, retângulo, círculo, polígono (O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="5"/><path d="M13 3h8v8h-8z"/></svg>Formas</button>
     <button class="tool" data-tool="block" title="Móveis e louças (K)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="9" width="18" height="9" rx="2"/><path d="M6 9V6h12v3M5 18v2M19 18v2"/></svg>Móveis</button>
+    <button class="tool" data-tool="photo" title="Foto presa no desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Foto</button>
     <button class="tool" data-tool="erase" title="Apagar (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H8l-5-5L14 4l7 7-6 6"/><path d="M7 11l6 6"/></svg>Apagar</button>
     <button class="tool" data-tool="pan" title="Mover a tela (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg>Mover</button>
     <div class="sep"></div>
@@ -493,7 +503,7 @@ let ctx = cv.getContext("2d");
 const STORE = "croqui-anderson-v1";
 
 /* ---------- estado ---------- */
-let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], notes: [], sk: [], lot: null, title: "" };
+let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], notes: [], photos: [], sk: [], lot: null, title: "" };
 var skOn = false, skDraw = () => {};
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
@@ -536,7 +546,7 @@ const EXAMPLE = () => {
 
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (!Array.isArray(o.shapes)) o.shapes = []; if (!Array.isArray(o.notes)) o.notes = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
+  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (!Array.isArray(o.shapes)) o.shapes = []; if (!Array.isArray(o.notes)) o.notes = []; if (!Array.isArray(o.photos)) o.photos = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
   return null;
 }
 function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
@@ -1210,6 +1220,91 @@ async function numRun() {
   } catch (e) { if (e && e.code === "not_granted") { opt.readNums = false; toast("Leitura de números desligada: o Claude não foi liberado"); } }
   numRead.busy = false;
 }
+/* ---------- Fotos da medição: ficam no aparelho (IndexedDB) e, na versão do Claude, também na nuvem do app (assets) ---------- */
+const PHDB = {
+  p: null,
+  open() { return this.p || (this.p = new Promise((res, rej) => { try { const r = indexedDB.open("croqui-fotos", 1); r.onupgradeneeded = () => r.result.createObjectStore("f"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } })); },
+  async put(k, v) { try { const d = await this.open(); await new Promise((res, rej) => { const t = d.transaction("f", "readwrite"); t.objectStore("f").put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); return true; } catch (e) { return false; } },
+  async get(k) { try { const d = await this.open(); return await new Promise(res => { const r = d.transaction("f").objectStore("f").get(k); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }); } catch (e) { return null; } }
+};
+let assetsNs;
+async function getAssets() { if (assetsNs !== undefined) return assetsNs; try { assetsNs = window.claude && window.claude.use ? await window.claude.use("assets") : null; } catch (e) { assetsNs = null; } return assetsNs; }
+const phUrls = new Map(); // id -> url para mostrar
+async function photoBlob(f) { // a foto em Blob, do aparelho ou da nuvem
+  const b = await PHDB.get(f.id); if (b) return b;
+  if (f.a) { try { const r = await fetch("/_blob/" + f.a); if (r.ok) { const bl = await r.blob(); PHDB.put(f.id, bl); return bl; } } catch (e) {} }
+  return null;
+}
+async function photoUrl(f) { if (phUrls.has(f.id)) return phUrls.get(f.id); const b = await photoBlob(f); if (!b) return null; const u = URL.createObjectURL(b); phUrls.set(f.id, u); return u; }
+function shrinkImage(file, max = 1600, q = 0.72) {
+  return new Promise((res, rej) => { const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement("canvas"); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob(b => b ? res(b) : rej(new Error("toBlob")), "image/jpeg", q); };
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error("img")); }; im.src = u; });
+}
+async function photoCloud(f, blob) { // sobe para a nuvem do app (para o Otávio ver em outro aparelho)
+  const as = await getAssets(); if (!as) return;
+  try { const r = await as.upload(blob, { type: "image/jpeg" }); const cur = (S.photos || []).find(x => x.id === f.id); if (cur && r && r.id) { cur.a = r.id; after(); } } catch (e) { toast("A foto ficou só neste aparelho (não subiu para o Claude)."); }
+}
+let phPending = null; // { at } nova foto, ou { f } trocar
+function photoNew(at) { phPending = { at }; const i = $("phFile"); i.value = ""; i.click(); }
+$("phFile").onchange = async e => {
+  const file = e.target.files && e.target.files[0], pend = phPending; phPending = null; if (!file || !pend) return;
+  let blob; try { blob = await shrinkImage(file); } catch (er) { toast("Não consegui abrir essa imagem."); return; }
+  let f;
+  if (pend.f) { f = (S.photos || []).find(x => x.id === pend.f.id); if (!f) return; snapshot(); delete f.a; phUrls.delete(f.id); }
+  else { snapshot(); if (!S.photos) S.photos = []; const n = S.photos.reduce((m, x) => Math.max(m, x.n || 0), 0) + 1; f = { id: nid(), x: clean(pend.at.x), y: clean(pend.at.y), n }; S.photos.push(f); }
+  const ok = await PHDB.put(f.id, blob); if (!ok) toast("O aparelho não deixou guardar a foto. Tente de novo.");
+  after(); openPhoto(f); toast("Foto F" + f.n + " guardada"); photoCloud(f, blob);
+};
+let phCur = null;
+async function openPhoto(f) {
+  closeSheets(); phCur = f; $("phTitle").textContent = "Foto F" + f.n; $("phNote").value = f.t || ""; $("phImg").removeAttribute("src"); $("phMsg").hidden = true;
+  $("sheetPhoto").hidden = false;
+  const u = await photoUrl(f); if (phCur !== f) return;
+  if (u) $("phImg").src = u; else { $("phMsg").hidden = false; $("phMsg").textContent = "A imagem desta foto não está neste aparelho. Ela foi tirada em outro aparelho e ainda não subiu para o Claude."; }
+}
+$("phSave").onclick = () => { if (!phCur) return; const f = (S.photos || []).find(x => x.id === phCur.id); if (!f) return; snapshot(); const t = $("phNote").value.trim(); if (t) f.t = t.slice(0, 300); else delete f.t; after(); toast("Observação salva na F" + f.n); };
+$("phNote").addEventListener("keydown", e => { if (e.key === "Enter") $("phSave").click(); e.stopPropagation(); });
+$("phRetake").onclick = () => { if (!phCur) return; phPending = { f: phCur }; const i = $("phFile"); i.value = ""; i.click(); };
+$("phDel").onclick = () => { if (!phCur) return; snapshot(); const id = phCur.id; S.photos = (S.photos || []).filter(x => x.id !== id); phCur = null; $("sheetPhoto").hidden = true; after(); toast("Foto apagada (Desfazer volta)"); };
+function hitPhoto(sp) { for (let i = (S.photos || []).length - 1; i >= 0; i--) { const f = S.photos[i]; if (dist(sp, toS(f)) < 18) return f; } return null; }
+function drawPhotos() {
+  if (!(S.photos || []).length) return;
+  ctx.save(); ctx.font = "700 11px 'IBM Plex Mono', monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  for (const f of S.photos) { const q = toS(f), on = phCur && phCur.id === f.id && !$("sheetPhoto").hidden;
+    ctx.fillStyle = on ? COL.acc : "rgba(255,207,74,.92)"; ctx.strokeStyle = "#1b2a44"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(q.x - 11, q.y - 8, 22, 16, 4) : ctx.rect(q.x - 11, q.y - 8, 22, 16); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(q.x, q.y + 0.5, 4.2, 0, Math.PI * 2); ctx.stroke(); ctx.fillStyle = "#1b2a44"; ctx.fillRect(q.x - 6, q.y - 11, 5, 3);
+    const lb = "F" + f.n + (f.t ? " ✎" : ""); ctx.fillStyle = COL.acc; ctx.fillText(lb, q.x + 14, q.y); }
+  ctx.restore();
+}
+async function photosForPdf() { // carrega as fotos (dataURL + tamanho) antes de montar o PDF
+  const out = [];
+  for (const f of [...(S.photos || [])].sort((a, b) => a.n - b.n)) {
+    const b = await photoBlob(f); if (!b) { out.push({ f, missing: true }); continue; }
+    const url = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(b); });
+    const dim = await new Promise(res => { const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = () => res(null); im.src = url; });
+    out.push(url && dim ? { f, url, w: dim[0], h: dim[1] } : { f, missing: true });
+  }
+  return out;
+}
+function photosPdf(doc, list) { // duas fotos por folha A4 em pé, com o número e a observação
+  if (!list || !list.length) return 0;
+  for (let i = 0; i < list.length; i += 2) {
+    doc.addPage("a4", "portrait"); doc.setTextColor(20, 48, 107);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text("FOTOS DA MEDIÇÃO" + (S.title ? " — " + S.title : ""), 12, 12);
+    for (let j = 0; j < 2 && i + j < list.length; j++) {
+      const it = list[i + j], y0 = 18 + j * 138, bw = 186, bh = 118;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("F" + it.f.n, 12, y0 + 4);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      if (it.f.t) doc.text(doc.splitTextToSize(it.f.t, 170).slice(0, 2), 24, y0 + 4);
+      if (it.missing) { doc.text("(imagem não disponível neste aparelho)", 12, y0 + 14); continue; }
+      const k = Math.min(bw / it.w, bh / it.h), w = it.w * k, h = it.h * k;
+      try { doc.addImage(it.url, "JPEG", 12 + (bw - w) / 2, y0 + 10, w, h); } catch (e) {}
+    }
+  }
+  return list.length;
+}
 function drawNotes() {
   if (!L_("ink")) return;
   for (const n of S.notes || []) {
@@ -1489,6 +1584,7 @@ function buildDxf() {
     text("COTA", add(mul(add(d.a, d.b), .5), mul(n, 0.15)), 0.15, fmt(L), -ang * 180 / Math.PI);
   }
   if (L_("ink")) for (const n of S.notes || []) text("ANOTACAO", n, n.h, n.s, -(n.ang || 0) * 180 / Math.PI);
+  for (const f of S.photos || []) text("ANOTACAO", f, 0.2, "F" + f.n + (f.t ? " " + f.t : ""));
   if (L_("text")) for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
   if (S.lot && L_("lot")) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
   if (L_("blk")) for (const b of S.blocks || []) for (const pl of blkPolys(b)) for (let i = 1; i < pl.length; i++) line("MOBILIARIO", pl[i - 1], pl[i]);
@@ -1587,7 +1683,7 @@ function draw() {
     ctx.strokeStyle = COL.acc; ctx.lineWidth = wl;
     ctx.beginPath(); live.forEach((p, i) => { const s = toS(p); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); ctx.stroke();
   }
-  drawPickBox(); drawPickObjs(); drawMeasure();
+  drawPhotos(); drawPickBox(); drawPickObjs(); drawMeasure();
   if (eraseTrail) { ctx.strokeStyle = "rgba(255,138,128,.8)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(eraseTrail.x, eraseTrail.y, 14, 0, Math.PI * 2); ctx.stroke(); }
   // escala gráfica
   let m = 1; const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50];
@@ -1789,10 +1885,11 @@ function alignFaces(fresh) {
 /* ---------- Selecionar (várias paredes) ---------- */
 let exporting = false, pickBox = null; // {a, b} na tela
 function pickWalls() { return S.walls.filter(w => multi.has(w.id)); }
-const OBJ = { ink: () => S.inks, shape: () => S.shapes || (S.shapes = []), note: () => S.notes || (S.notes = []), text: () => S.texts, block: () => S.blocks || (S.blocks = []) };
-const OBJ_NM = { ink: "traço", shape: "forma", note: "número", text: "texto", block: "móvel" };
+const OBJ = { photo: () => S.photos || (S.photos = []), ink: () => S.inks, shape: () => S.shapes || (S.shapes = []), note: () => S.notes || (S.notes = []), text: () => S.texts, block: () => S.blocks || (S.blocks = []) };
+const OBJ_NM = { photo: "foto", ink: "traço", shape: "forma", note: "número", text: "texto", block: "móvel" };
 function pickObjs() { const r = []; for (const key of [...multiO]) { const i = key.indexOf(":"), k = key.slice(0, i), id = key.slice(i + 1); const o = OBJ[k] && OBJ[k]().find(x => x.id === id); if (o) r.push({ k, o }); else multiO.delete(key); } return r; }
 function hitObj(sp) {
+  const ph = hitPhoto(sp); if (ph) return { k: "photo", o: ph };
   const sh = hitShape(sp, 10); if (sh) return { k: "shape", o: sh };
   const n = hitNote(sp); if (n) return { k: "note", o: n };
   const t = hitText(sp); if (t) return { k: "text", o: t };
@@ -2300,6 +2397,7 @@ cv.addEventListener("pointerdown", ev => {
     drag = { mode: "ink", last: p }; }
   else if (tool === "erase") { drag = { mode: "erase", did: false }; eraseAt(p); }
   else if (tool === "text") { drag = { mode: "textTap", start: p }; }
+  else if (tool === "photo") { const f = hitPhoto(p); drag = f ? { mode: "phDrag", f, start: p, moved: false } : { mode: "phTap", start: p }; }
   else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
   else if (tool === "shape") { drag = shpDown(p); }
   else if (tool === "block") { const b = hitBlock(p); drag = b ? { mode: "blkDrag", b, start: p, moved: false } : { mode: "blkTap", start: p }; }
@@ -2372,6 +2470,7 @@ cv.addEventListener("pointermove", ev => {
     for (const g of liveGuides) g.b = { ...drag.b }; const P = lotFitPts(rectPts(drag.a, drag.b), opt.thick, true); live = [...P, P[0]]; draw(); return; }
   if (drag.mode === "msr") { msr.hover = snapAt(p); draw(); return; }
   if (drag.mode === "shp") { shpMove(drag, p); return; }
+  if (drag.mode === "phDrag") { if (!drag.moved && dist(p, drag.start) < (ptrKind === "mouse" ? 6 : 12)) return; if (!drag.moved) { snapshot(); drag.moved = true; } const w = toW(p); drag.f.x = clean(w.x); drag.f.y = clean(w.y); draw(); return; }
   if (drag.mode === "blkDrag") { if (!drag.moved && dist(p, drag.start) < 6) return; if (!drag.moved) { snapshot(); drag.moved = true; drag.w = blkWallOf(drag.b); } const got = blkSnap(drag.b, toW(p), drag.w); if (got) drag.w = got; else drag.w = null; sel = { type: "block", id: drag.b.id }; draw(); return; }
   if (drag.mode === "pickBox") { if (dist(p, drag.start) > 6) { pickBox = { a: drag.start, b: p }; draw(); } return; }
   if (drag.mode === "pickTap" && dist(p, drag.start) > (ptrKind === "mouse" ? 8 : 12)) {
@@ -2491,6 +2590,8 @@ function endPtr(ev) {
   }
   else if (d.mode === "pickTap") { if (d.was) { if (d.w) multi.delete(d.w.id); else multiO.delete(d.key); } showPick(); }
   else if (d.mode === "pickMove") { dropZero(); after(); showPick(); if (d.dx || d.dy) toast("Movido " + fmt(Math.abs(d.dx || 0)) + " em X e " + fmt(Math.abs(d.dy || 0)) + " em Y"); }
+  else if (d.mode === "phDrag") { if (d.moved) after(); else openPhoto(d.f); }
+  else if (d.mode === "phTap") { if (dist(p, d.start) < 12) photoNew(toW(p)); }
   else if (d.mode === "textTap") { if (dist(p, d.start) < 10) openText(null, toW(p)); }
   else if (d.mode === "text") { if (d.moved) after(); else openText(d.t); }
   else if (d.mode === "open") { if (d.moved) after(); else openOpening(d.o); }
@@ -2541,7 +2642,7 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 /* ---------- painéis ---------- */
 function closeSheets() {
   nbClose();
-  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk", "sheetShape", "sheetInk"]) $(id).hidden = true;
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk", "sheetShape", "sheetInk", "sheetPhoto"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
@@ -2718,14 +2819,14 @@ $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk();
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
-$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], notes: [], sk: [], lot: null, title: "" }; shpPoly = null; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], notes: [], photos: [], sk: [], lot: null, title: "" }; shpPoly = null; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
 $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
 function setTool(t) {
   snapCache = null;
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque em qualquer desenho (parede, linha, forma, texto, móvel) ou arraste uma janela. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", photo: "Foto: toque no lugar do desenho onde a foto foi tirada. Toque num ícone de foto para ver, escrever a observação ou apagar. Arraste o ícone para mudar de lugar.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque em qualquer desenho (parede, linha, forma, texto, móvel) ou arraste uma janela. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
   ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet(); if (t !== "shape") shpPoly = null; if (t === "shape") showShapeSheet(); if (t === "ink") showInkSheet();
@@ -2816,13 +2917,14 @@ $("expOpen").onclick = () => $("fileOpen").click();
 function cleanProj(o) {
   return { title: String(o.title || ""), walls: o.walls.filter(w => w && w.a && w.b).map(w => ({ id: typeof w.id === "string" ? w.id.slice(0, 40) : nid(), a: { x: +w.a.x, y: +w.a.y }, b: { x: +w.b.x, y: +w.b.y }, flip: !!w.flip, fixB: !!w.fixB, dim: !!w.dim, t: [0.1, 0.12, 0.15, 0.2].includes(+w.t) ? +w.t : 0.15 })),
             lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
-            inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
+            inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", ...(k.line ? { line: true } : {}), pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
             openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
             dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
             texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
             shapes: shpClean(o.shapes),
             notes: (Array.isArray(o.notes) ? o.notes : []).filter(n => n && typeof n.s === "string" && isFinite(n.x) && isFinite(n.y)).slice(0, 2000).map(n => ({ id: nid(), x: +n.x, y: +n.y, s: n.s.slice(0, 30), h: Math.max(0.08, Math.min(1, +n.h || 0.2)), ang: isFinite(n.ang) ? +n.ang : 0 })),
+            photos: (Array.isArray(o.photos) ? o.photos : []).filter(f => f && typeof f.id === "string" && isFinite(f.x) && isFinite(f.y)).slice(0, 300).map(f => ({ id: f.id.slice(0, 40), x: +f.x, y: +f.y, n: Math.max(1, Math.floor(+f.n) || 1), ...(typeof f.a === "string" && /^[0-9a-f]{32}$/.test(f.a) ? { a: f.a } : {}), ...(typeof f.t === "string" && f.t ? { t: f.t.slice(0, 300) } : {}) })),
             sk: skClean(o.sk) };
 }
 $("fileOpen").onchange = e => {
@@ -2871,7 +2973,8 @@ function drawTo(g) {
   // desenha usando a mesma rotina, trocando o contexto temporariamente
   const orig = ctx; ctx = g; exporting = true; try { draw(); } finally { ctx = orig; exporting = false; }
 }
-$("expPdf").onclick = () => {
+$("expPdf").onclick = async () => {
+  let phl = null; if ((S.photos || []).length) { $("expMsg").textContent = "Preparando as fotos…"; phl = await photosForPdf(); }
   const b = bounds(); if (!b) { $("expMsg").textContent = "Desenhe alguma parede antes de exportar."; return; }
   if (!window.jspdf) { $("expMsg").textContent = "O gerador de PDF não carregou. Verifique a internet e tente de novo."; return; }
   const sizes = [["a4", 297, 210], ["a3", 420, 297]];
@@ -2956,6 +3059,7 @@ $("expPdf").onclick = () => {
   // pincel
   doc.setLineCap("round"); doc.setLineJoin("round"); doc.setLineWidth(Math.max(0.2, INK_W * mm));
   if (L_("ink")) for (const k of S.inks) { const pts = k.pts.map(q => P({ x: q[0], y: q[1] })); for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); }
+  for (const f of S.photos || []) { const q = P(f); doc.setDrawColor(200, 140, 0); doc.setFillColor(255, 207, 74); doc.setLineWidth(0.2); doc.roundedRect(q.x - 2.2, q.y - 1.6, 4.4, 3.2, 0.6, 0.6, "FD"); doc.circle(q.x, q.y, 0.8, "S"); doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(20, 48, 107); doc.text("F" + f.n, q.x + 2.8, q.y + 0.9); }
   if (L_("ink")) for (const n of S.notes || []) { const q = P(n), fs = Math.max(5, n.h * mm * 2.83); doc.setFont("courier", "bold"); doc.setFontSize(fs); const tw = doc.getTextWidth(n.s), a = n.ang || 0; doc.text(n.s, q.x - Math.cos(a) * tw / 2 + Math.sin(a) * fs * 0.12, q.y - Math.sin(a) * tw / 2 + Math.cos(a) * fs * 0.12, { angle: -a * 180 / Math.PI }); }
   doc.setLineCap("butt");
   // portas e janelas
@@ -3017,9 +3121,9 @@ $("expPdf").onclick = () => {
   doc.setLineWidth(0.25);
   for (let i = 0; i < sbm; i++) { if (i % 2 === 0) doc.setFillColor(20, 48, 107); else doc.setFillColor(255, 255, 255); doc.rect(sbx + i * mm, sby, mm, 1.4, "FD"); }
   doc.setFontSize(6.5); doc.text("0", sbx, sby + 4, { align: "center" }); doc.text(sbm + " m", sbx + sbm * mm, sby + 4, { align: "center" });
-  const nsk = skPdf(doc);
+  const nsk = skPdf(doc), nph = photosPdf(doc, phl);
   const out = doc.output("blob");
-  $("expMsg").textContent = (nsk ? "PDF com a planta e " + nsk + (nsk > 1 ? " folhas" : " folha") + " de rascunho. Planta" : "PDF") + " na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
+  $("expMsg").textContent = (nsk ? "PDF com a planta e " + nsk + (nsk > 1 ? " folhas" : " folha") + " de rascunho. Planta" : "PDF") + (nph ? " (+ " + nph + (nph > 1 ? " fotos" : " foto") + " no fim)" : "") + " na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
   offer(fileBase() + ".pdf", out);
 };
 
