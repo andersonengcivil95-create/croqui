@@ -861,10 +861,11 @@ function neighbors(w, withLot) {
   }
   if (S.lot && withLot !== false) S.lot.pts.forEach((_, i) => {
     const [la, lb] = lotSide(i), ll = dist(la, lb); if (ll < 0.05) return;
-    const ux = mul(sub(lb, la), 1 / ll); if (Math.abs(u.x * ux.y - u.y * ux.x) > 1e-3) return;
-    const d = dot(sub(la, w.a), n); if (Math.abs(d) < 0.01) return;
+    const ux = mul(sub(lb, la), 1 / ll); if (Math.abs(u.x * ux.y - u.y * ux.x) > 0.1) return; // divisa quase paralela (terreno torto até ~6°)
+    const nl = { x: -ux.y, y: ux.x }, den = dot(n, nl), dA = dot(sub(la, w.a), nl) / den, dB = dot(sub(la, w.b), nl) / den;
+    const useB = Math.abs(dB) < Math.abs(dA), d = useB ? dB : dA; if (Math.abs(d) < 0.01) return; // mede da ponta mais perto da divisa
     const s0 = dot(sub(la, w.a), u), s1 = dot(sub(lb, w.a), u), lo = Math.max(w0, Math.min(s0, s1)), hi = Math.min(w1, Math.max(s0, s1));
-    const cand = { x: null, lot: i, d, ov: hi > lo + 0.01 ? (lo + hi) / 2 : null, s: (s0 + s1) / 2 };
+    const se = useB ? w1 : w0, cand = { x: null, lot: i, d, ov: hi > lo + 0.01 ? Math.max(lo, Math.min(hi, se)) : null, s: (s0 + s1) / 2 };
     if (d > 0) { if (cand.ov !== null) { if (!pos || d < pos.d) pos = cand; } else if (!posAny || d < posAny.d) posAny = cand; }
     else { if (cand.ov !== null) { if (!neg || d > neg.d) neg = cand; } else if (!negAny || d > negAny.d) negAny = cand; }
   });
