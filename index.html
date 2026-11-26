@@ -55,6 +55,8 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 .tool.on{background:var(--chrome-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 .tool svg{width:22px;height:22px}
 .sep{width:1px;background:var(--line);margin:6px 2px}
+.chkchip{left:auto!important;right:16px;top:58px!important;background:#c0392b!important;color:#fff!important;border-color:#e74c3c!important}
+.chkchip.done{background:#1e8449!important;border-color:#27ae60!important}
 .inkconv{position:absolute;left:16px;top:12px;z-index:6;border-radius:999px;padding:8px 16px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .hint{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:rgba(15,47,104,.88);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:12.5px;max-width:calc(100% - 32px);text-align:center;pointer-events:none;transition:opacity .3s}
 .scalebar{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:12px;font-family:var(--font-num);font-size:11px;color:var(--ink-soft);pointer-events:none}
@@ -132,6 +134,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
     <label class="btn" title="Cotas pelo eixo da parede ou pelas faces (externa e interna)"><span class="hide-sm">Cotas</span> <select id="optDimMode" aria-label="Tipo de cota" style="background:transparent;border:0;outline:0;font-weight:600">
       <option value="face" selected>ext./int.</option><option value="axis">eixo</option></select></label>
     <button class="btn" id="optDims" title="Mostrar a medida de todas as paredes, mesmo as que você ainda não indicou">⟷ <span class="hide-sm">Todas as cotas</span></button>
+    <button class="btn" id="btnCheck" title="Mostra em vermelho o que ainda falta medir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h11"/></svg><span class="hide-sm">Conferir</span></button>
     <button class="btn" id="btnAreas" title="Quadro de áreas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 10v10"/></svg><span class="hide-sm">Áreas</span></button>
     <button class="btn" id="btnProj" hidden title="Projetos guardados no Claude"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="hide-sm">Projetos</span></button>
     <button class="btn" id="btnAsk" hidden title="Perguntar ao Claude sobre este desenho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg><span class="hide-sm">Perguntar</span></button>
@@ -170,6 +173,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="tool" id="skClear" title="Apagar tudo desta folha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Limpar</button>
       </div>
     </div>
+    <button class="btn inkconv chkchip" id="chkChip" hidden title="Ir para o próximo item sem medida"></button>
     <button class="btn primary inkconv" id="inkConv" hidden title="Transforma as linhas retas do pincel em paredes">▦ Linhas → paredes</button>
     <div class="hint" id="hint">Risque as paredes à vontade. As medidas você indica depois, em Medida.</div>
     <div class="scalebar" id="scalebar"><span>1 m</span><i id="scalebarI" style="width:60px"></i></div>
@@ -864,7 +868,7 @@ function openOpening(o) {
 function setOpenW(v) {
   const o = curOpen(); if (!o) return; const g = openGeom(o);
   if (g && v > g.L) { toast("A largura passa do tamanho da parede (" + fmt(g.L) + " m)"); return; }
-  snapshot(); o.w = clean(v); after(); openOpening(o);
+  snapshot(); o.w = clean(v); o.mz = true; after(); openOpening(o);
 }
 
 /* ---------- distâncias entre paredes (estilo Revit) ---------- */
@@ -1714,7 +1718,7 @@ function draw() {
     ctx.strokeStyle = COL.acc; ctx.lineWidth = wl;
     ctx.beginPath(); live.forEach((p, i) => { const s = toS(p); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); ctx.stroke();
   }
-  drawPhotos(); drawPickBox(); drawPickObjs(); drawMeasure();
+  drawPhotos(); drawCheck(); drawPickBox(); drawPickObjs(); drawMeasure();
   if (eraseTrail) { ctx.strokeStyle = "rgba(255,138,128,.8)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(eraseTrail.x, eraseTrail.y, 14, 0, Math.PI * 2); ctx.stroke(); }
   // escala gráfica
   let m = 1; const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50];
@@ -1946,6 +1950,37 @@ function objMap(k, o, f) { // aplica a transformação f(ponto) no desenho
 }
 function objSnap(list) { return list.map(({ k, o }) => ({ k, o, orig: JSON.parse(JSON.stringify(o)) })); }
 function objShift(recs, dx, dy) { for (const r of recs) { const src = JSON.parse(JSON.stringify(r.orig)); for (const key of Object.keys(r.o)) if (!(key in src)) delete r.o[key]; Object.assign(r.o, src); objMap(r.k, r.o, q => ({ x: q.x + dx, y: q.y + dy })); } }
+/* ---------- Conferir: o que ainda falta medir ---------- */
+opt.check = false; let chkIdx = 0;
+function missing() {
+  const ws = S.walls.filter(w => !w.dim), ops = S.openings.filter(o => !o.mz && S.walls.some(w => w.id === o.wall)), rs = S.texts.filter(t => !t.pd);
+  return { ws, ops, rs, n: ws.length + ops.length + rs.length };
+}
+function chkUpd() {
+  const c = $("chkChip"); if (!c) return; if (!opt.check || skOn) { c.hidden = true; return; }
+  const m = missing(); c.hidden = false; c.classList.toggle("done", !m.n);
+  c.textContent = m.n ? "Falta medir: " + [m.ws.length ? m.ws.length + (m.ws.length > 1 ? " paredes" : " parede") : "", m.ops.length ? m.ops.length + (m.ops.length > 1 ? " portas/janelas" : " porta/janela") : "", m.rs.length ? m.rs.length + " sem pé-direito" : ""].filter(Boolean).join(" · ") + "  ›" : "✓ Tudo medido";
+}
+function drawCheck() {
+  chkUpd(); if (!opt.check || exporting) return; const m = missing(); if (!m.n) return;
+  ctx.save(); ctx.strokeStyle = "rgba(255,80,70,.9)"; ctx.lineWidth = Math.max(3, 0.08 * view.k); ctx.lineCap = "round"; ctx.setLineDash([10, 6]);
+  for (const w of m.ws) { const a = toS(w.a), b = toS(w.b); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  ctx.setLineDash([]); ctx.lineWidth = 2.5;
+  for (const o of m.ops) { const g = openGeom(o); if (!g) continue; const q = toS(mul(add(g.p1, g.p2), .5)); ctx.beginPath(); ctx.arc(q.x, q.y, 12, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.font = "700 11px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.fillStyle = "rgba(255,80,70,.95)";
+  for (const t of m.rs) { const q = toS(t); ctx.fillText("PD ?", q.x, q.y - 16); }
+  ctx.restore();
+}
+function chkNext() { // vai para o próximo item sem medida e já abre a edição
+  const m = missing(), all = [...m.ws.map(o => ["w", o]), ...m.ops.map(o => ["o", o]), ...m.rs.map(o => ["t", o])];
+  if (!all.length) { toast("Tudo medido. Pode mandar para o Otávio."); return; }
+  const [k, o] = all[chkIdx++ % all.length], c = k === "w" ? mul(add(o.a, o.b), .5) : k === "o" ? (g => g ? mul(add(g.p1, g.p2), .5) : null)(openGeom(o)) : o;
+  if (c) { const r = cv.getBoundingClientRect(); view.ox = r.width / 2 - c.x * view.k; view.oy = r.height / 2 - c.y * view.k; }
+  if (k === "w") { setTool("select"); selectWall(o); } else if (k === "o") { setTool("select"); openOpening(o); } else { openText(o); setTimeout(() => $("roomPd").focus(), 60); }
+  draw();
+}
+$("btnCheck").onclick = e => { opt.check = !opt.check; chkIdx = 0; e.currentTarget.classList.toggle("on", opt.check); draw(); if (opt.check) { const m = missing(); toast(m.n ? "Em vermelho: o que ainda não teve medida digitada. Toque no aviso para ir ao próximo." : "Tudo medido."); } };
+$("chkChip").onclick = chkNext;
 function drawPickObjs() {
   if (exporting || tool !== "pick" || !multiO.size) return;
   ctx.save(); ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
@@ -2821,10 +2856,10 @@ $("openW").addEventListener("keydown", e => { if (e.key === "Enter") $("openAppl
 $("openHApply").onclick = () => {
   const o = curOpen(); if (!o) return; const h = parseLen($("openH").value), ps = o.kind === "window" ? parseLen($("openPs").value) : null;
   if (!h || (o.kind === "window" && ps === null)) { toast("Digite a altura" + (o.kind === "window" ? " e o peitoril" : "") + " em metros"); return; }
-  snapshot(); o.h = clean(h); if (o.kind === "window") o.ps = clean(ps); after(); openOpening(o);
+  snapshot(); o.h = clean(h); if (o.kind === "window") o.ps = clean(ps); o.mz = true; after(); openOpening(o);
 };
 for (const id of ["openH", "openPs"]) $(id).addEventListener("keydown", e => { if (e.key === "Enter") $("openHApply").click(); });
-$("openBath").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.w = Math.min(0.6, openGeom(o) ? openGeom(o).L : 0.6); o.h = 0.6; o.ps = 1.5; after(); openOpening(o); };
+$("openBath").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.w = Math.min(0.6, openGeom(o) ? openGeom(o).L : 0.6); o.h = 0.6; o.ps = 1.5; o.mz = true; after(); openOpening(o); };
 $("openHinge").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.hinge = !o.hinge; after(); };
 $("openSide").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); o.side = !o.side; after(); };
 $("openDel").onclick = () => { const o = curOpen(); if (!o) return; snapshot(); S.openings = S.openings.filter(x => x !== o); closeSheets(); after(); };
@@ -2957,7 +2992,7 @@ function cleanProj(o) {
   return { title: String(o.title || ""), walls: o.walls.filter(w => w && w.a && w.b).map(w => ({ id: typeof w.id === "string" ? w.id.slice(0, 40) : nid(), a: { x: +w.a.x, y: +w.a.y }, b: { x: +w.b.x, y: +w.b.y }, flip: !!w.flip, fixB: !!w.fixB, dim: !!w.dim, t: [0.1, 0.12, 0.15, 0.2].includes(+w.t) ? +w.t : 0.15 })),
             lot: o.lot && Array.isArray(o.lot.pts) && o.lot.pts.length >= 3 ? { pts: o.lot.pts.slice(0, 200).map(q => ({ x: +q.x || 0, y: +q.y || 0 })), front: Number.isInteger(o.lot.front) ? o.lot.front : undefined } : null,
             inks: (Array.isArray(o.inks) ? o.inks : []).filter(k => k && Array.isArray(k.pts)).slice(0, 5000).map(k => ({ id: nid(), c: k.c === "y" ? "y" : "w", ...(k.line ? { line: true } : {}), pts: k.pts.filter(q => Array.isArray(q) && isFinite(q[0]) && isFinite(q[1])).map(q => [+q[0], +q[1]]) })),
-            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
+            openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(q.mz ? { mz: true } : {}), ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
             dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
             texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80), ...(+t.pd > 1 && +t.pd < 12 ? { pd: +t.pd } : {}), ...(typeof t.piso === "string" && t.piso ? { piso: t.piso.slice(0, 40) } : {}), ...(typeof t.forro === "string" && t.forro ? { forro: t.forro.slice(0, 40) } : {}), ...(typeof t.obs === "string" && t.obs ? { obs: t.obs.slice(0, 200) } : {}) })),
