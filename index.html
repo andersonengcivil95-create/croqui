@@ -1817,7 +1817,7 @@ function showPick() {
   if (!n) { $("sheetPick").hidden = true; draw(); return; }
   for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetMeasure"]) $(id).hidden = true;
   const tw = nW ? (nW === 1 ? "1 parede" : nW + " paredes") : "", to = nO ? (nO === 1 ? "1 desenho" : nO + " desenhos") : "";
-  $("pickTitle").textContent = [tw, to].filter(Boolean).join(" e ") + (n === 1 ? " selecionado" : " selecionados");
+  $("pickTitle").textContent = [tw, to].filter(Boolean).join(" e ") + (nO ? (n === 1 ? " selecionado" : " selecionados") : (n === 1 ? " selecionada" : " selecionadas"));
   $("pickThick").hidden = !nW; $("pickDimOn").hidden = $("pickDimOff").hidden = !nW;
   const ws = pickWalls(), t0 = nW ? TH(ws[0]) : 0, same = nW && ws.every(w => Math.abs(TH(w) - t0) < 1e-6);
   document.querySelectorAll("#pickThick [data-t]").forEach(b => b.classList.toggle("on", same && Math.abs(t0 - +b.dataset.t) < 1e-6));
