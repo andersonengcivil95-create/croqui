@@ -288,6 +288,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
     <div class="sheet" id="sheetInk" hidden>
       <h3><span>Pincel</span><button class="x" data-close aria-label="Fechar">×</button></h3>
       <div class="row"><button class="btn on" data-ink="free">✎ Livre</button><button class="btn" data-ink="line">／ Linha reta</button></div>
+      <div class="row"><span class="note" style="min-width:90px">Linha vira:</span><button class="btn" data-inkloc="ext" title="A linha é a face de fora da parede; a parede cresce para dentro">Face externa</button><button class="btn" data-inkloc="eixo" title="A linha é o centro da parede">Eixo</button><button class="btn" data-inkloc="int" title="A linha é a face de dentro; a parede cresce para fora">Face interna</button></div>
       <div class="row"><button class="btn on" data-inkc="w">Branco</button><button class="btn" data-inkc="y" style="color:var(--accent)">Amarelo</button></div>
       <div class="row"><button class="btn primary" id="inkConv2">▦ Transformar linhas em paredes</button></div>
       <p class="note" id="inkHelp"></p>
@@ -999,13 +1000,25 @@ function inkToWalls() { // linhas retas do pincel viram paredes (pontas próxima
     for (const [ax, small, big] of [["y", dy, dx], ["x", dx, dy]]) if (small > 1e-9 && small < Math.max(0.06, big * 0.03) && big > 0.05) {
       const v = fixed.has(A) ? A[ax] : fixed.has(B) ? B[ax] : clean(opt.round ? r5((A[ax] + B[ax]) / 2) : (A[ax] + B[ax]) / 2); if (!fixed.has(A)) A[ax] = v; if (!fixed.has(B)) B[ax] = v; }
   }
+  const loc = opt.inkLoc || "ext";
+  if (loc !== "eixo") { // a linha é uma face: o eixo da parede vai meia espessura para dentro (ou para fora)
+    const all = segs.flatMap(sg => sg), grp = all.length >= 6 || !S.walls.length ? all : S.walls.flatMap(w => [w.a, w.b]);
+    const C = mul(grp.reduce((a, q) => add(a, q), { x: 0, y: 0 }), 1 / grp.length), h = opt.thick / 2 * (loc === "ext" ? 1 : -1);
+    const offL = segs.map(([A, B]) => { const L = dist(A, B) || 1, u = mul(sub(B, A), 1 / L); let n = { x: -u.y, y: u.x }; const m = mul(add(A, B), 0.5); if (dot(sub(C, m), n) < 0) n = mul(n, -1); const o = mul(n, h); return { a: add(A, o), b: add(B, o), o }; });
+    const inc = new Map(); segs.forEach((sg, i) => sg.forEach(q => { if (!inc.has(q)) inc.set(q, []); inc.get(q).push(i); }));
+    const np = new Map();
+    for (const [q, is] of inc) { if (fixed.has(q)) continue; let r = null;
+      for (let i = 0; i < is.length && !r; i++) for (let j = i + 1; j < is.length && !r; j++) r = lineX(offL[is[i]], offL[is[j]]);
+      np.set(q, r || add(q, offL[is[0]].o)); }
+    for (const [q, r] of np) { q.x = clean(r.x); q.y = clean(r.y); }
+  }
   lotFitSegs(segs, opt.thick);
   const fresh = [];
   for (const [A, B] of segs) { if (dist(A, B) < 0.05) continue; fresh.push({ id: nid(), a: { x: clean(A.x), y: clean(A.y) }, b: { x: clean(B.x), y: clean(B.y) }, t: opt.thick }); }
   const ids = new Set(ls.map(k => k.id)); S.inks = S.inks.filter(k => !ids.has(k.id));
   if (!fresh.length) { after(); return; }
   const why = alignFaces(fresh); S.walls.push(...fresh); after();
-  toast(fresh.length + (fresh.length > 1 ? " paredes criadas" : " parede criada") + " com " + fmt(opt.thick).replace(/^0,/, "0,") + " m. Desfazer volta as linhas." + (why ? " " + why : ""));
+  toast(fresh.length + (fresh.length > 1 ? " paredes criadas" : " parede criada") + " com " + fmt(opt.thick).replace(/^0,/, "0,") + " m (linha = " + ({ ext: "face externa", int: "face interna", eixo: "eixo" }[loc]) + "). Desfazer volta as linhas." + (why ? " " + why : ""));
 }
 function drawInks() {
   ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = Math.max(1.6, INK_W * view.k);
@@ -3093,11 +3106,14 @@ function showInkSheet() {
   $("sheetInk").hidden = false;
   document.querySelectorAll("[data-ink]").forEach(b => b.classList.toggle("on", (b.dataset.ink === "line") === !!opt.inkLine));
   document.querySelectorAll("[data-inkc]").forEach(b => b.classList.toggle("on", b.dataset.inkc === opt.inkColor));
-  $("inkHelp").textContent = opt.inkLine ? "Linha reta: arraste do começo ao fim. Com 45/90 ligado o ângulo fica preso, e a ponta gruda nas paredes." : "Livre: escreva à mão. Um risco quase reto vira reta sozinho.";
+  document.querySelectorAll("[data-inkloc]").forEach(b => b.classList.toggle("on", b.dataset.inkloc === (opt.inkLoc || "ext")));
+  $("inkHelp").textContent = (opt.inkLoc === "eixo" ? "Ao virar parede, a linha fica no centro dela. " : opt.inkLoc === "int" ? "Ao virar parede, a linha fica na face de dentro. " : "Ao virar parede, a linha fica na face de fora. ") + (opt.inkLine ? "Linha reta: arraste do começo ao fim. Com 45/90 ligado o ângulo fica preso, e a ponta gruda nas paredes." : "Livre: escreva à mão. Um risco quase reto vira reta sozinho.");
   const tb = document.querySelector('.tool[data-tool=ink]'); if (tb) tb.style.color = opt.inkColor === "y" ? "var(--accent)" : "";
 }
 $("inkConv").onclick = inkToWalls; $("inkConv2").onclick = () => { $("sheetInk").hidden = true; inkToWalls(); };
 document.querySelectorAll("[data-ink]").forEach(b => b.onclick = () => { opt.inkLine = b.dataset.ink === "line"; showInkSheet(); });
+document.querySelectorAll("[data-inkloc]").forEach(b => b.onclick = () => { opt.inkLoc = b.dataset.inkloc; try { localStorage.setItem("croqui-inkloc", opt.inkLoc); } catch (e) {} showInkSheet(); });
+try { const v = localStorage.getItem("croqui-inkloc"); if (v) opt.inkLoc = v; } catch (e) {}
 document.querySelectorAll("[data-inkc]").forEach(b => b.onclick = () => { opt.inkColor = b.dataset.inkc; showInkSheet(); });
 function showShapeSheet() {
   $("sheetShape").hidden = false;
