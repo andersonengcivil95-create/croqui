@@ -55,7 +55,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 .tool.on{background:var(--chrome-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 .tool svg{width:22px;height:22px}
 .sep{width:1px;background:var(--line);margin:6px 2px}
-.inkconv{position:absolute;right:16px;top:12px;z-index:6;border-radius:999px;padding:8px 16px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.inkconv{position:absolute;left:16px;top:12px;z-index:6;border-radius:999px;padding:8px 16px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .hint{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:rgba(15,47,104,.88);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:12.5px;max-width:calc(100% - 32px);text-align:center;pointer-events:none;transition:opacity .3s}
 .scalebar{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:12px;font-family:var(--font-num);font-size:11px;color:var(--ink-soft);pointer-events:none}
 .scalebar i{display:block;height:6px;border:1.5px solid var(--ink);border-top:0;margin-top:3px}
@@ -255,7 +255,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn" id="pickNone">Limpar seleção</button>
         <button class="btn danger" id="pickDel">Apagar</button>
       </div>
-      <p class="note hide-sm">Toque nas paredes para juntar ou tirar da seleção. Arraste no vazio para fazer uma janela: da esquerda para a direita pega o que está todo dentro; da direita para a esquerda pega o que cruza. Arraste uma parede selecionada para mover todas. Y positivo é para baixo.</p>
+      <p class="note hide-sm">Toque nas paredes, linhas, formas, textos e móveis para juntar ou tirar da seleção. Arraste no vazio para fazer uma janela: da esquerda para a direita pega o que está todo dentro; da direita para a esquerda pega o que cruza. Arraste uma parede selecionada para mover todas. Y positivo é para baixo.</p>
     </div>
 
     <!-- painel: móveis -->
@@ -500,6 +500,8 @@ const view = { k: 50, ox: 0, oy: 0 };          // tela = mundo(m) * k + o
 const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "face", lenRef: null, faceAlign: true, smartInk: true, modMode: "fillet", rect: false, rectRef: "int" };
 let ext1 = null, rectCtx = null;
 const multi = new Set();   // paredes da ferramenta Selecionar
+const multiO = new Set();  // outros desenhos selecionados: "ink:id", "shape:id", "note:id", "text:id", "block:id"
+{ const mc = multi.clear.bind(multi); multi.clear = () => { mc(); multiO.clear(); }; }
 let msr = { a: null, b: null, hover: null };
 const LAYERS = { dims: "Cotas", text: "Nomes e áreas", lbl: "Medidas de portas e janelas", blk: "Móveis e louças", shp: "Medidas das formas", ink: "Pincel", lot: "Terreno" };
 const lay = { dims: true, text: true, lbl: true, blk: true, shp: true, ink: true, lot: true };
@@ -1541,7 +1543,7 @@ function draw() {
     ctx.strokeStyle = COL.acc; ctx.lineWidth = wl;
     ctx.beginPath(); live.forEach((p, i) => { const s = toS(p); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); ctx.stroke();
   }
-  drawPickBox(); drawMeasure();
+  drawPickBox(); drawPickObjs(); drawMeasure();
   if (eraseTrail) { ctx.strokeStyle = "rgba(255,138,128,.8)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(eraseTrail.x, eraseTrail.y, 14, 0, Math.PI * 2); ctx.stroke(); }
   // escala gráfica
   let m = 1; const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50];
@@ -1714,6 +1716,42 @@ function alignFaces(fresh) {
 /* ---------- Selecionar (várias paredes) ---------- */
 let exporting = false, pickBox = null; // {a, b} na tela
 function pickWalls() { return S.walls.filter(w => multi.has(w.id)); }
+const OBJ = { ink: () => S.inks, shape: () => S.shapes || (S.shapes = []), note: () => S.notes || (S.notes = []), text: () => S.texts, block: () => S.blocks || (S.blocks = []) };
+const OBJ_NM = { ink: "traço", shape: "forma", note: "número", text: "texto", block: "móvel" };
+function pickObjs() { const r = []; for (const key of [...multiO]) { const i = key.indexOf(":"), k = key.slice(0, i), id = key.slice(i + 1); const o = OBJ[k] && OBJ[k]().find(x => x.id === id); if (o) r.push({ k, o }); else multiO.delete(key); } return r; }
+function hitObj(sp) {
+  const sh = hitShape(sp, 10); if (sh) return { k: "shape", o: sh };
+  const n = hitNote(sp); if (n) return { k: "note", o: n };
+  const t = hitText(sp); if (t) return { k: "text", o: t };
+  const b = hitBlock(sp); if (b) return { k: "block", o: b };
+  const i = hitInk(sp); if (i) return { k: "ink", o: i };
+  return null;
+}
+function objPts(k, o) { // pontos (mundo) que representam o desenho
+  if (k === "ink") return o.pts.map(q => ({ x: q[0], y: q[1] }));
+  if (k === "shape") return o.t === "circle" ? [{ x: o.c.x - o.r, y: o.c.y - o.r }, { x: o.c.x + o.r, y: o.c.y - o.r }, { x: o.c.x + o.r, y: o.c.y + o.r }, { x: o.c.x - o.r, y: o.c.y + o.r }] : shpVerts(o);
+  if (k === "block") { const B = BLOCKS[o.type]; if (B) { const r = (o.rot || 0) * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r); return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => ({ x: o.x + (u * B.w / 2) * c - (v * B.d / 2) * sn, y: o.y + (u * B.w / 2) * sn + (v * B.d / 2) * c })); } }
+  return [{ x: o.x, y: o.y }];
+}
+function objMap(k, o, f) { // aplica a transformação f(ponto) no desenho
+  const F = q => { const r = f(q); return { x: clean(r.x), y: clean(r.y) }; }, P = q => { const r = F(q); q.x = r.x; q.y = r.y; };
+  if (k === "ink") o.pts = o.pts.map(q => { const r = F({ x: q[0], y: q[1] }); return [r.x, r.y]; });
+  else if (k === "shape") {
+    if (o.t === "circle") P(o.c); else if (o.t === "poly") o.pts.forEach(P); else if (o.t === "line") { P(o.a); P(o.b); }
+    else { const C = shpVerts(o).map(F), ax = C.every((q, i) => { const z = C[(i + 1) % 4]; return Math.abs(q.x - z.x) < 1e-6 || Math.abs(q.y - z.y) < 1e-6; });
+      if (ax) { o.a = { x: Math.min(...C.map(q => q.x)), y: Math.min(...C.map(q => q.y)) }; o.b = { x: Math.max(...C.map(q => q.x)), y: Math.max(...C.map(q => q.y)) }; }
+      else { o.t = "poly"; o.pts = C; delete o.a; delete o.b; } }
+  } else P(o);
+}
+function objSnap(list) { return list.map(({ k, o }) => ({ k, o, orig: JSON.parse(JSON.stringify(o)) })); }
+function objShift(recs, dx, dy) { for (const r of recs) { const src = JSON.parse(JSON.stringify(r.orig)); for (const key of Object.keys(r.o)) if (!(key in src)) delete r.o[key]; Object.assign(r.o, src); objMap(r.k, r.o, q => ({ x: q.x + dx, y: q.y + dy })); } }
+function drawPickObjs() {
+  if (exporting || tool !== "pick" || !multiO.size) return;
+  ctx.save(); ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+  for (const { k, o } of pickObjs()) { const ps = objPts(k, o).map(toS); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of ps) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    const pad = k === "text" || k === "note" ? 16 : 6; ctx.strokeRect(x0 - pad, y0 - pad, x1 - x0 + pad * 2, y1 - y0 + pad * 2); }
+  ctx.restore();
+}
 function drawPickBox() {
   if (exporting || !pickBox) return;
   const { a, b } = pickBox, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), wd = Math.abs(b.x - a.x), ht = Math.abs(b.y - a.y);
@@ -1735,15 +1773,19 @@ function boxSelect(a, b) {
   const inR = q => q.x >= r.x0 && q.x <= r.x1 && q.y >= r.y0 && q.y <= r.y1;
   let n = 0;
   for (const w of S.walls) { const A = toS(w.a), B = toS(w.b); if (cross ? segRectHit(A, B, r) : (inR(A) && inR(B))) { multi.add(w.id); n++; } }
+  for (const k of Object.keys(OBJ)) { if (k === "ink" && !L_("ink")) continue; for (const o of OBJ[k]()) { const ps = objPts(k, o).map(toS); if (!ps.length) continue;
+    const ok = cross ? ps.some(inR) || ps.some((q, i) => i && segRectHit(ps[i - 1], q, r)) : ps.every(inR); if (ok) { multiO.add(k + ":" + o.id); n++; } } }
   return n;
 }
 function showPick() {
   for (const id of [...multi]) if (!S.walls.some(w => w.id === id)) multi.delete(id);
-  const n = multi.size;
+  const nO = pickObjs().length, nW = multi.size, n = nW + nO;
   if (!n) { $("sheetPick").hidden = true; draw(); return; }
   for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetMeasure"]) $(id).hidden = true;
-  $("pickTitle").textContent = n === 1 ? "1 parede selecionada" : n + " paredes selecionadas";
-  const ws = pickWalls(), t0 = TH(ws[0]), same = ws.every(w => Math.abs(TH(w) - t0) < 1e-6);
+  const tw = nW ? (nW === 1 ? "1 parede" : nW + " paredes") : "", to = nO ? (nO === 1 ? "1 desenho" : nO + " desenhos") : "";
+  $("pickTitle").textContent = [tw, to].filter(Boolean).join(" e ") + (n === 1 ? " selecionado" : " selecionados");
+  $("pickThick").hidden = !nW; $("pickDimOn").hidden = $("pickDimOff").hidden = !nW;
+  const ws = pickWalls(), t0 = nW ? TH(ws[0]) : 0, same = nW && ws.every(w => Math.abs(TH(w) - t0) < 1e-6);
   document.querySelectorAll("#pickThick [data-t]").forEach(b => b.classList.toggle("on", same && Math.abs(t0 - +b.dataset.t) < 1e-6));
   renderPickLot();
   $("sheetPick").hidden = false; draw();
@@ -1765,14 +1807,17 @@ function renderPickLot() {
   });
 }
 function movePicked(dx, dy, copy) {
-  const ws = pickWalls(); if (!ws.length) return;
+  const ws = pickWalls(), obs = pickObjs(); if (!ws.length && !obs.length) return;
   snapshot();
+  if (copy) { const fresh = []; for (const { k, o } of obs) { const c = JSON.parse(JSON.stringify(o)); c.id = nid(); objMap(k, c, q => ({ x: q.x + dx, y: q.y + dy })); OBJ[k]().push(c); fresh.push(k + ":" + c.id); } multiO.clear(); fresh.forEach(x => multiO.add(x)); }
+  else objShift(objSnap(obs), dx, dy);
+  if (!ws.length) { after(); showPick(); return; }
   if (copy) {
     const map = new Map(), fresh = [];
     for (const w of ws) { const c = { ...w, id: nid(), a: { x: clean(w.a.x + dx), y: clean(w.a.y + dy) }, b: { x: clean(w.b.x + dx), y: clean(w.b.y + dy) } }; delete c.fixB; map.set(w.id, c.id); fresh.push(c); }
     S.walls.push(...fresh);
     for (const o of S.openings.filter(o => map.has(o.wall))) S.openings.push({ ...o, id: nid(), wall: map.get(o.wall) });
-    multi.clear(); fresh.forEach(w => multi.add(w.id));
+    const keepO = [...multiO]; multi.clear(); fresh.forEach(w => multi.add(w.id)); keepO.forEach(x => multiO.add(x));
   } else {
     const rd = riders(pickBounds());
     pickApplyMove(pickMoveRefs(), dx, dy);
@@ -1797,6 +1842,7 @@ function pickMoveRefs() {
 }
 function pickApplyMove(R, dx, dy) {
   for (const r of R.full) { r.pt.x = clean(r.o.x + dx); r.pt.y = clean(r.o.y + dy); }
+  if (R.objs) objShift(R.objs, dx, dy);
   for (const r of R.slide) {
     const L0 = { a: r.fixed, b: r.o }, mv = { a: { x: r.sw.a.x + dx, y: r.sw.a.y + dy }, b: { x: r.sw.b.x + dx, y: r.sw.b.y + dy } };
     let q = lineX(L0, mv);
@@ -1917,17 +1963,19 @@ function showBlockSheet() {
 }
 
 /* ---------- girar / espelhar a seleção (textos e cotas fixas dentro dela vão junto) ---------- */
-function pickBounds() {
-  const ws = pickWalls(); if (!ws.length) return null;
+function pickBounds(all) {
+  const ws = pickWalls(), ps = ws.flatMap(w => [w.a, w.b]); if (all) for (const { k, o } of pickObjs()) ps.push(...objPts(k, o)); if (!ps.length) return null;
   let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
-  for (const w of ws) for (const q of [w.a, w.b]) { minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y); }
+  for (const q of ps) { minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y); }
   return { minx, miny, maxx, maxy, c: { x: clean(r5((minx + maxx) / 2)), y: clean(r5((miny + maxy) / 2)) } };
 }
 function insideB(b, q) { const m = 0.05; return q.x >= b.minx - m && q.x <= b.maxx + m && q.y >= b.miny - m && q.y <= b.maxy + m; }
-function riders(b) { return { texts: S.texts.filter(t => insideB(b, t)).concat((S.blocks || []).filter(k => insideB(b, k))), dims: (S.dims || []).filter(d => insideB(b, d.a) && insideB(b, d.b)) }; }
-function transformPicked(f, mirror, blkFix) {
-  const ws = pickWalls(), b = pickBounds(); if (!ws.length) return;
+function riders(b) { if (!b) return { texts: [], dims: [] }; const own = o => multiO.has("text:" + o.id) || multiO.has("block:" + o.id); const r = ridersAll(b); r.texts = r.texts.filter(o => !own(o)); return r; }
+function ridersAll(b) { return { texts: S.texts.filter(t => insideB(b, t)).concat((S.blocks || []).filter(k => insideB(b, k))), dims: (S.dims || []).filter(d => insideB(b, d.a) && insideB(b, d.b)) }; }
+function transformPicked(f, mirror, blkFix, noteFix) {
+  const ws = pickWalls(), b = pickBounds(), obs = pickObjs(); if (!ws.length && !obs.length) return;
   snapshot();
+  for (const { k, o } of obs) { objMap(k, o, f); if (k === "block" && blkFix) blkFix(o); if (k === "note" && noteFix) noteFix(o); }
   const rd = riders(b), seen = new Set();
   const T = q => { if (seen.has(q)) return; seen.add(q); const r = f(q); q.x = clean(r.x); q.y = clean(r.y); };
   for (const w of ws) { T(w.a); T(w.b); }
@@ -1938,11 +1986,11 @@ function transformPicked(f, mirror, blkFix) {
   after(); showPick();
 }
 function rotatePicked(deg) {
-  const b = pickBounds(); if (!b) return; const a = -deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), o = b.c;
-  transformPicked(q => ({ x: o.x + (q.x - o.x) * c - (q.y - o.y) * sn, y: o.y + (q.x - o.x) * sn + (q.y - o.y) * c }), false, k => { k.rot = (((k.rot || 0) - deg) % 360 + 360) % 360; });
+  const b = pickBounds(true); if (!b) return; const a = -deg * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), o = b.c;
+  transformPicked(q => ({ x: o.x + (q.x - o.x) * c - (q.y - o.y) * sn, y: o.y + (q.x - o.x) * sn + (q.y - o.y) * c }), false, k => { k.rot = (((k.rot || 0) - deg) % 360 + 360) % 360; }, n => { n.ang = (n.ang || 0) - deg * Math.PI / 180; });
 }
 function mirrorPicked(axis) {
-  const b = pickBounds(); if (!b) return; const o = b.c;
+  const b = pickBounds(true); if (!b) return; const o = b.c;
   transformPicked(q => axis === "x" ? { x: 2 * o.x - q.x, y: q.y } : { x: q.x, y: 2 * o.y - q.y }, true, k => { k.flip = !k.flip; k.rot = ((axis === "x" ? -(k.rot || 0) : 180 - (k.rot || 0)) % 360 + 360) % 360; });
 }
 
@@ -2167,8 +2215,9 @@ cv.addEventListener("pointerdown", ev => {
   else if (tool === "block") { const b = hitBlock(p); drag = b ? { mode: "blkDrag", b, start: p, moved: false } : { mode: "blkTap", start: p }; }
   else if (tool === "measure") { msr.hover = snapAt(p); drag = { mode: "msr" }; draw(); }
   else if (tool === "pick") {
-    const w = hitWall(p);
+    const w = hitWall(p), ob = w ? null : hitObj(p);
     if (w) { const was = multi.has(w.id); multi.add(w.id); drag = { mode: "pickTap", w, was, start: p, startW: toW(p) }; draw(); }
+    else if (ob) { const key = ob.k + ":" + ob.o.id, was = multiO.has(key); multiO.add(key); drag = { mode: "pickTap", key, was, start: p, startW: toW(p) }; draw(); }
     else drag = { mode: "pickBox", start: p };
   }
   else if (tool === "lot") {
@@ -2238,6 +2287,7 @@ cv.addEventListener("pointermove", ev => {
   if (drag.mode === "pickTap" && dist(p, drag.start) > 8) {
     snapshot(); const rd = riders(pickBounds()), refs = pickMoveRefs();
     for (const q of rd.texts.concat(rd.dims.flatMap(d => [d.a, d.b]))) refs.full.push({ pt: q, o: { x: q.x, y: q.y } });
+    refs.objs = objSnap(pickObjs());
     const w0 = pickWalls()[0]; if (w0) { const L = dist(w0.a, w0.b) || 1; refs.u = { x: (w0.b.x - w0.a.x) / L, y: (w0.b.y - w0.a.y) / L }; }
     drag = { mode: "pickMove", refs, startW: drag.startW };
     $("sheetPick").hidden = true;
@@ -2346,10 +2396,10 @@ function endPtr(ev) {
     after(); toast(BLOCKS[blkType].nm + (onWall ? " encostado na parede" : ""));
   }
   else if (d.mode === "pickBox") {
-    if (pickBox) { const n = boxSelect(pickBox.a, pickBox.b); pickBox = null; if (!n) toast("Nenhuma parede na janela"); showPick(); }
+    if (pickBox) { const n = boxSelect(pickBox.a, pickBox.b); pickBox = null; if (!n) toast("Nada dentro da janela"); showPick(); }
     else { multi.clear(); $("sheetPick").hidden = true; draw(); }
   }
-  else if (d.mode === "pickTap") { if (d.was) multi.delete(d.w.id); showPick(); }
+  else if (d.mode === "pickTap") { if (d.was) { if (d.w) multi.delete(d.w.id); else multiO.delete(d.key); } showPick(); }
   else if (d.mode === "pickMove") { dropZero(); after(); showPick(); if (d.dx || d.dy) toast("Movido " + fmt(Math.abs(d.dx || 0)) + " em X e " + fmt(Math.abs(d.dy || 0)) + " em Y"); }
   else if (d.mode === "textTap") { if (dist(p, d.start) < 10) openText(null, toW(p)); }
   else if (d.mode === "text") { if (d.moved) after(); else openText(d.t); }
@@ -2525,14 +2575,16 @@ const offMake = sgn => {
 };
 $("offA").onclick = () => offMake(1); $("offB").onclick = () => offMake(-1);
 const pickDelta = () => { const dx = $("pickDx").value.trim() ? parseLen($("pickDx").value.replace(/^-/, "")) : 0, dy = $("pickDy").value.trim() ? parseLen($("pickDy").value.replace(/^-/, "")) : 0; if (dx === null || dy === null) return null; return { dx: ($("pickDx").value.trim().startsWith("-") ? -1 : 1) * dx, dy: ($("pickDy").value.trim().startsWith("-") ? -1 : 1) * dy }; };
-$("pickMove").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite quanto mover em X e/ou Y (ex.: 1,50 ou -0,80)"); return; } movePicked(d.dx, d.dy, false); toast("Paredes movidas"); };
-$("pickCopy").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite a distância da cópia em X e/ou Y"); return; } movePicked(d.dx, d.dy, true); toast("Paredes copiadas"); };
+$("pickMove").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite quanto mover em X e/ou Y (ex.: 1,50 ou -0,80)"); return; } movePicked(d.dx, d.dy, false); toast("Seleção movida"); };
+$("pickCopy").onclick = () => { const d = pickDelta(); if (!d || (!d.dx && !d.dy)) { toast("Digite a distância da cópia em X e/ou Y"); return; } movePicked(d.dx, d.dy, true); toast("Seleção copiada"); };
 document.querySelectorAll("#pickThick [data-t]").forEach(b => b.addEventListener("click", () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => setThick(w, +b.dataset.t)); after(); showPick(); }));
 $("pickDimOn").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.dim = true); after(); showPick(); };
 $("pickDimOff").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); ws.forEach(w => w.dim = false); after(); showPick(); };
-$("pickAll").onclick = () => { S.walls.forEach(w => multi.add(w.id)); showPick(); };
+$("pickAll").onclick = () => { S.walls.forEach(w => multi.add(w.id)); for (const k of Object.keys(OBJ)) for (const o of OBJ[k]()) multiO.add(k + ":" + o.id); showPick(); };
 $("pickNone").onclick = () => { multi.clear(); showPick(); };
-$("pickDel").onclick = () => { const ws = pickWalls(); if (!ws.length) return; snapshot(); const ids = new Set(ws.map(w => w.id)); S.walls = S.walls.filter(w => !ids.has(w.id)); S.openings = S.openings.filter(o => !ids.has(o.wall)); multi.clear(); after(); showPick(); toast(ids.size + (ids.size === 1 ? " parede apagada" : " paredes apagadas")); };
+$("pickDel").onclick = () => { const ws = pickWalls(), obs = pickObjs(); if (!ws.length && !obs.length) return; snapshot(); const ids = new Set(ws.map(w => w.id)); S.walls = S.walls.filter(w => !ids.has(w.id)); S.openings = S.openings.filter(o => !ids.has(o.wall));
+  for (const k of Object.keys(OBJ)) { const del = new Set(obs.filter(x => x.k === k).map(x => x.o.id)); if (!del.size) continue; const L = OBJ[k](), keep = L.filter(o => !del.has(o.id)); L.length = 0; L.push(...keep); }
+  const n = ids.size + obs.length; multi.clear(); after(); showPick(); toast(n + (n === 1 ? " item apagado" : " itens apagados")); };
 $("msrKeep").onclick = () => { if (!msr.a || !msr.b || dist(msr.a, msr.b) < 0.01) return; snapshot(); S.dims.push({ id: nid(), a: { x: clean(msr.a.x), y: clean(msr.a.y) }, b: { x: clean(msr.b.x), y: clean(msr.b.y) } }); msr = { a: null, b: null, hover: null }; $("sheetMeasure").hidden = true; after(); toast("Cota fixada"); };
 $("msrNew").onclick = () => { msr = { a: null, b: null, hover: null }; $("sheetMeasure").hidden = true; showHint("Toque no primeiro ponto."); draw(); };
 $("optDimMode").onchange = e => { opt.dimMode = e.target.value; try { localStorage.setItem(STORE + "-dm", opt.dimMode); } catch (er) {} draw(); toast(opt.dimMode === "face" ? "Cotas pelas faces: externa por fora, interna por dentro" : "Cotas pelo eixo das paredes"); };
@@ -2582,7 +2634,7 @@ $("expTitle").addEventListener("input", e => { S.title = e.target.value; save();
 
 function setTool(t) {
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque em qualquer desenho (parede, linha, forma, texto, móvel) ou arraste uma janela. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
   ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet(); if (t !== "shape") shpPoly = null; if (t === "shape") showShapeSheet(); if (t === "ink") showInkSheet();
@@ -2617,7 +2669,7 @@ document.addEventListener("keydown", e => {
   else if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
   else if (k === "escape") { if (tool === "pick") multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); }
   else if ((e.ctrlKey || e.metaKey) && k === "a" && tool === "pick") { e.preventDefault(); $("pickAll").click(); }
-  else if ((k === "delete" || k === "backspace") && tool === "pick" && multi.size) $("pickDel").click();
+  else if ((k === "delete" || k === "backspace") && tool === "pick" && (multi.size || multiO.size)) $("pickDel").click();
   else if ((k === "delete" || k === "backspace") && sel && sel.type === "block") $("blkDel").click();
   else if ((k === "delete" || k === "backspace") && sel && sel.type === "shape") $("shpDel").click();
   else if ((k === "delete" || k === "backspace") && sel) { if (sel.type === "wall") $("wallDel").click(); else if (sel.type === "open") $("openDel").click(); else { snapshot(); S.texts = S.texts.filter(t => t.id !== sel.id); closeSheets(); after(); } }
@@ -2945,7 +2997,7 @@ function shpDrawOne(s, isSel, live) {
 function centroidOf(vs) { let x = 0, y = 0; for (const q of vs) { x += q.x; y += q.y; } return { x: x / vs.length, y: y / vs.length }; }
 function drawShapes() {
   ctx.lineCap = "round"; ctx.lineJoin = "round";
-  for (const s of S.shapes || []) shpDrawOne(s, !!(sel && sel.type === "shape" && sel.id === s.id), false);
+  for (const s of S.shapes || []) shpDrawOne(s, !!(sel && sel.type === "shape" && sel.id === s.id) || (tool === "pick" && multiO.has("shape:" + s.id)), false);
   if (shpLive) shpDrawOne(shpLive, false, true);
   if (shpPoly) {
     const vs = shpPoly.pts.map(toS); ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.6; ctx.beginPath(); vs.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y));
@@ -3390,7 +3442,7 @@ if (window.claude && typeof window.claude.use === "function") {
 }
 
 /* ---------- início ---------- */
-window.__cq = { get S() { return S; }, view, toS: p => toS(p), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
+window.__cq = { get S() { return S; }, view, toS: p => toS(p), dbg: () => [...multi, ...multiO].join(" "), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
 const saved = load();
 S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = []; if (!Array.isArray(S.shapes)) S.shapes = []; if (!Array.isArray(S.notes)) S.notes = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
