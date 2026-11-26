@@ -995,6 +995,7 @@ function inkToWalls() { // linhas retas do pincel viram paredes (pontas próxima
     for (const [ax, small, big] of [["y", dy, dx], ["x", dx, dy]]) if (small > 1e-9 && small < Math.max(0.06, big * 0.03) && big > 0.05) {
       const v = fixed.has(A) ? A[ax] : fixed.has(B) ? B[ax] : clean(opt.round ? r5((A[ax] + B[ax]) / 2) : (A[ax] + B[ax]) / 2); if (!fixed.has(A)) A[ax] = v; if (!fixed.has(B)) B[ax] = v; }
   }
+  lotFitSegs(segs, opt.thick);
   const fresh = [];
   for (const [A, B] of segs) { if (dist(A, B) < 0.05) continue; fresh.push({ id: nid(), a: { x: clean(A.x), y: clean(A.y) }, b: { x: clean(B.x), y: clean(B.y) }, t: opt.thick }); }
   const ids = new Set(ls.map(k => k.id)); S.inks = S.inks.filter(k => !ids.has(k.id));
@@ -1675,6 +1676,35 @@ function areaOf(t) {
   if (best.Ai === undefined) best.Ai = innerArea(best.poly);
   return best.Ai;
 }
+/* Ímã do terreno: parede perto da divisa encosta por dentro (face na linha) e a ponta não passa da divisa */
+function lotFitSegs(segs, t) {
+  if (!S.lot || !S.lot.pts || S.lot.pts.length < 3 || !segs.length) return false;
+  const P = S.lot.pts, n = P.length, h = t / 2, tol = Math.min(0.6, Math.max(0.25, 16 / view.k)), sides = [];
+  for (let i = 0; i < n; i++) { const A = P[i], B = P[(i + 1) % n], L = dist(A, B); if (L < 1e-6) continue; const u = mul(sub(B, A), 1 / L); let nn = { x: -u.y, y: u.x }; const m = mul(add(A, B), 0.5); if (!inside(add(m, mul(nn, 0.02)), P)) nn = mul(nn, -1); sides.push({ A, B, u, n: nn, L }); }
+  const sd = (q, sd_) => dot(sub(q, sd_.A), sd_.n), along = (q, sd_) => dot(sub(q, sd_.A), sd_.u);
+  const shift = new Map(); let did = false;
+  for (const [a, b] of segs) { const d = sub(b, a), l = len(d); if (l < 1e-6) continue; const uw = mul(d, 1 / l);
+    for (const sd_ of sides) { if (Math.abs(uw.x * sd_.u.y - uw.y * sd_.u.x) > 0.06) continue;
+      const da = sd(a, sd_), db = sd(b, sd_); if (Math.abs(da) > tol || Math.abs(db) > tol) continue;
+      if (Math.max(along(a, sd_), along(b, sd_)) < -tol || Math.min(along(a, sd_), along(b, sd_)) > sd_.L + tol) continue;
+      for (const [q, dq] of [[a, da], [b, db]]) { let m = shift.get(q); if (!m) shift.set(q, m = new Map()); m.set(sd_, mul(sd_.n, h - dq)); } } }
+  for (const [q, m] of shift) { let v = { x: 0, y: 0 }; for (const x of m.values()) v = add(v, x); q.x = clean(q.x + v.x); q.y = clean(q.y + v.y); did = true; }
+  const deg = new Map(); for (const [a, b] of segs) { deg.set(a, (deg.get(a) || 0) + 1); deg.set(b, (deg.get(b) || 0) + 1); }
+  for (const [a, b] of segs) for (const [q, o] of [[a, b], [b, a]]) {
+    if (deg.get(q) !== 1 || shift.has(q)) continue;
+    const d = sub(q, o), l = len(d); if (l < 1e-6) continue; const uw = mul(d, 1 / l); let best = null, bk = Infinity;
+    for (const sd_ of sides) { const dq = sd(q, sd_); if (dq > tol) continue; const den = dot(uw, sd_.n); if (Math.abs(den) < 0.2) continue;
+      const k = (h - dq) / den, q2 = add(q, mul(uw, k)), al = along(q2, sd_);
+      if (al < -0.05 || al > sd_.L + 0.05 || dot(sub(q2, o), uw) < 0.05) continue;
+      if (Math.abs(k) < bk) { bk = Math.abs(k); best = q2; } }
+    if (best && bk > 1e-6) { q.x = clean(best.x); q.y = clean(best.y); did = true; }
+  }
+  return did;
+}
+function lotFitPts(pts, t, closed) {
+  const q = pts.map(p => ({ x: p.x, y: p.y })), segs = []; for (let i = 1; i < q.length; i++) segs.push([q[i - 1], q[i]]); if (closed && q.length > 2) segs.push([q[q.length - 1], q[0]]);
+  lotFitSegs(segs, t); return q;
+}
 function inside(p, poly) {
   let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i], b = poly[j];
@@ -2273,13 +2303,13 @@ cv.addEventListener("pointermove", ev => {
   }
   if (drag.mode === "draw") {
     const last = rawStroke[rawStroke.length - 1];
-    if (dist(last, p) >= 2) { rawStroke.push(p); live = straighten(rawStroke); draw(); }
+    if (dist(last, p) >= 2) { rawStroke.push(p); live = lotFitPts(straighten(rawStroke), opt.thick); draw(); }
     return;
   }
   if (drag.mode === "erase") { eraseTrail = p; eraseAt(p); return; }
   if (drag.mode === "rect") { drag.b = magnetFree(toW(p), 16 / view.k); liveGuides = [];
     for (const ax of ["x", "y"]) { const al = alignRefs(ax, drag.b[ax], 14 / view.k, [drag.a]); if (al && al.ref !== drag.a && Math.abs(al.val - drag.a[ax]) > 0.05) { drag.b = { ...drag.b, [ax]: al.val }; liveGuides.push({ a: al.ref, b: null, ax }); } }
-    for (const g of liveGuides) g.b = { ...drag.b }; const P = rectPts(drag.a, drag.b); live = [...P, P[0]]; draw(); return; }
+    for (const g of liveGuides) g.b = { ...drag.b }; const P = lotFitPts(rectPts(drag.a, drag.b), opt.thick, true); live = [...P, P[0]]; draw(); return; }
   if (drag.mode === "msr") { msr.hover = snapAt(p); draw(); return; }
   if (drag.mode === "shp") { shpMove(drag, p); return; }
   if (drag.mode === "blkDrag") { if (!drag.moved && dist(p, drag.start) < 6) return; if (!drag.moved) { snapshot(); drag.moved = true; drag.w = blkWallOf(drag.b); } const got = blkSnap(drag.b, toW(p), drag.w); if (got) drag.w = got; else drag.w = null; sel = { type: "block", id: drag.b.id }; draw(); return; }
@@ -2366,7 +2396,7 @@ function endPtr(ev) {
   if (d.mode === "ink") { if (inkCur && inkCur.line && dist({ x: inkCur.pts[0][0], y: inkCur.pts[0][1] }, { x: inkCur.pts[1][0], y: inkCur.pts[1][1] }) < 0.02) { inkCur = null; draw(); return; }
     if (inkCur) { if (!inkCur.line) inkStraight(inkCur); snapshot(); S.inks.push(inkCur); smartQueue(inkCur); inkCur = null; after(); } return; }
   if (d.mode === "draw") {
-    const pts = rawStroke ? straighten(rawStroke) : [];
+    const pts = rawStroke ? lotFitPts(straighten(rawStroke), opt.thick) : [];
     rawStroke = null; live = null;
     if (pts.length >= 2) {
       snapshot();
@@ -2382,7 +2412,7 @@ function endPtr(ev) {
   else if (d.mode === "rect") {
     live = null;
     if (Math.abs(d.b.x - d.a.x) < 0.2 || Math.abs(d.b.y - d.a.y) < 0.2) { draw(); toast("Arraste de um canto até o canto oposto"); return; }
-    const P = rectPts(d.a, d.b); snapshot();
+    const P = lotFitPts(rectPts(d.a, d.b), opt.thick, true); snapshot();
     const ws = P.map((q, i) => ({ id: nid(), a: { ...q }, b: { ...P[(i + 1) % 4] }, t: opt.thick }));
     S.walls.push(...ws); rectCtx = { ids: ws.map(w => w.id) }; after(); openRect();
   }
