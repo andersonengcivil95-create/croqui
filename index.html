@@ -561,6 +561,7 @@ function segDist(p, a, b) {
   return { d: dist(p, add(a, mul(ab, t))), t, q: add(a, mul(ab, t)) };
 }
 function fmt(m) { return (Math.round(m * 100 + (m >= 0 ? 1e-6 : -1e-6)) / 100).toFixed(2).replace(".", ","); }
+function parseLen0(s) { const t = String(s).trim().replace(/\s/g, "").replace(",", ".").replace(/m$/i, ""); return /^0+(\.0*)?$/.test(t) ? 0 : parseLen(s); } // aceita zero (encostar)
 function parseLen(s) {
   s = String(s).trim().replace(/\s/g, "").replace(",", ".").replace(/m$/i, "");
   let v = parseFloat(s); if (!isFinite(v) || v <= 0) return null;
@@ -898,11 +899,11 @@ function renderDistRows(w) {
   });
 }
 function nbApply(w, c, txt) {
-  const v = parseLen(txt); if (v === null || v < 0) { toast("Digite a distância em metros, ex.: 3,00"); return false; }
+  const v = parseLen0(txt); if (v === null || v < 0) { toast("Digite a distância em metros, ex.: 3,00 (0 encosta)"); return false; }
   const want = v + ((opt.face || !c.x) ? (TH(w) + (c.x ? TH(c.x) : 0)) / 2 : 0);
   const m = c.d - Math.sign(c.d) * want;
   snapshot(); moveWall(w, m, c.n); dropZero(); after(); if (tool === "select") selectWall(w);
-  toast((c.x ? "Vão" : "Recuo") + " agora com " + fmt(v) + " m. A parede andou " + fmt(Math.abs(m)) + " m");
+  toast(v === 0 ? (c.x ? "Parede encostada na outra" : "Parede encostada na divisa") + ". Andou " + fmt(Math.abs(m)) + " m" : (c.x ? "Vão" : "Recuo") + " agora com " + fmt(v) + " m. A parede andou " + fmt(Math.abs(m)) + " m");
   return true;
 }
 // toque no número amarelo (cota temporária) abre a edição ali mesmo, como no Revit
@@ -910,11 +911,13 @@ let nbHits = [], nbCur = null;
 function nbTap(p) {
   const h = nbHits.find(q => Math.abs(p.x - q.x) <= q.hw && Math.abs(p.y - q.y) <= q.hh); if (!h) return false;
   nbCur = h; const ed = $("nbEd"); ed.style.left = h.x + "px"; ed.style.top = h.y + "px"; ed.hidden = false;
-  $("nbIn").value = fmt(h.c.gap); setTimeout(() => { $("nbIn").focus(); $("nbIn").select(); }, 30);
+  $("nbIn").value = fmt(h.c ? h.c.gap : h.g.d); setTimeout(() => { $("nbIn").focus(); $("nbIn").select(); }, 30);
   return true;
 }
 function nbClose() { $("nbEd").hidden = true; nbCur = null; }
-$("nbOk").onclick = () => { const h = nbCur; if (!h) return; const v = $("nbIn").value; nbClose(); nbApply(h.w, h.c, v); };
+$("nbOk").onclick = () => { const h = nbCur; if (!h) return; const v = $("nbIn").value; nbClose();
+  if (h.g) { const x = parseLen0(v); if (x === null) { toast("Digite o recuo em metros (0 encosta na divisa)"); return; } const sh = mul(h.g.n, h.g.d - x); movePicked(clean(sh.x), clean(sh.y), false); toast(x === 0 ? "Encostado na divisa (" + h.g.role.toLowerCase() + ")" : h.g.role + ": " + fmt(x) + " m"); return; }
+  nbApply(h.w, h.c, v); };
 $("nbIn").addEventListener("keydown", e => { if (e.key === "Enter") $("nbOk").click(); else if (e.key === "Escape") nbClose(); e.stopPropagation(); });
 function tempDim(A, B, label) {
   const v = sub(B, A), L = len(v); if (L < 2) return;
@@ -945,7 +948,7 @@ function drawNeighborDims() {
   if (exporting) return;
   nbHits = [];
   if (tool === "pick" && multi.size) {
-    for (const g of groupLotDims()) tempDim(toS(g.p), toS(g.foot), fmt(g.d));
+    for (const g of groupLotDims()) { const A = toS(g.p), B = toS(g.foot); tempDim(A, B, fmt(g.d)); if (dist(A, B) >= 2) nbHits.push({ g, x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, hw: 30, hh: 18 }); }
     if (multi.size === 1) { const w = pickWalls()[0]; if (w) for (const c of neighbors(w, false)) drawOneNeighbor(w, c); }
     return;
   }
@@ -1831,7 +1834,7 @@ function renderPickLot() {
     const inp = document.createElement("input"); inp.inputMode = "decimal"; inp.autocomplete = "off"; inp.value = fmt(g.d); inp.setAttribute("aria-label", "Recuo " + g.role);
     const un = document.createElement("span"); un.textContent = "m"; f.append(inp, un);
     const bt = document.createElement("button"); bt.className = "btn"; bt.textContent = "Mover";
-    const go = () => { const v = parseLen(inp.value); if (v === null) { toast("Digite o recuo em metros, ex.: 1,50"); return; } const sh = mul(g.n, g.d - v); movePicked(clean(sh.x), clean(sh.y), false); toast(g.role + ": " + fmt(v) + " m"); };
+    const go = () => { const v = parseLen0(inp.value); if (v === null) { toast("Digite o recuo em metros, ex.: 1,50 (0 encosta na divisa)"); return; } const sh = mul(g.n, g.d - v); movePicked(clean(sh.x), clean(sh.y), false); toast(v === 0 ? "Encostado na divisa (" + g.role.toLowerCase() + ")" : g.role + ": " + fmt(v) + " m"); };
     bt.onclick = go; inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
     row.append(lab, f, bt); box.appendChild(row);
   });
@@ -3472,7 +3475,7 @@ if (window.claude && typeof window.claude.use === "function") {
 }
 
 /* ---------- início ---------- */
-window.__cq = { get S() { return S; }, view, toS: p => toS(p), dbg: () => [...multi, ...multiO].join(" "), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
+window.__cq = { get S() { return S; }, view, toS: p => toS(p), nbg: () => nbHits.filter(h => h.g).map(h => ({ x: h.x, y: h.y, r: h.g.role, d: h.g.d })), dbg: () => [...multi, ...multiO].join(" "), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
 const saved = load();
 S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = []; if (!Array.isArray(S.shapes)) S.shapes = []; if (!Array.isArray(S.notes)) S.notes = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
