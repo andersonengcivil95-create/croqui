@@ -356,6 +356,22 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn primary" id="textOk">OK</button>
         <button class="btn danger" id="textDel" hidden>Apagar</button>
       </div>
+      <div id="roomInfo" style="display:flex;flex-direction:column;gap:8px">
+        <div class="row">
+          <span class="note" style="min-width:80px">Pé-direito</span>
+          <label class="field num" style="max-width:150px"><input id="roomPd" inputmode="decimal" autocomplete="off" placeholder="2,80" aria-label="Pé-direito"><span>m</span></label>
+          <span class="note" id="roomPdHint"></span>
+        </div>
+        <div class="row">
+          <span class="note" style="min-width:80px">Piso</span>
+          <label class="field" style="max-width:220px"><input id="roomPiso" list="lsPiso" autocomplete="off" placeholder="Ex.: cerâmica" aria-label="Piso"></label>
+          <span class="note" style="min-width:44px">Forro</span>
+          <label class="field" style="max-width:220px"><input id="roomForro" list="lsForro" autocomplete="off" placeholder="Ex.: laje" aria-label="Forro"></label>
+        </div>
+        <label class="field"><input id="roomObs" autocomplete="off" maxlength="200" placeholder="Observação (ex.: janela sem verga, piso em desnível)" aria-label="Observação do cômodo"></label>
+        <datalist id="lsPiso"><option value="Cerâmica"><option value="Porcelanato"><option value="Cimentado"><option value="Contrapiso"><option value="Laminado"><option value="Vinílico"><option value="Madeira"><option value="Terra"></datalist>
+        <datalist id="lsForro"><option value="Laje"><option value="PVC"><option value="Gesso"><option value="Madeira"><option value="Sem forro"></datalist>
+      </div>
     </div>
 
     <div class="sheet" id="sheetPhoto" hidden>
@@ -1288,6 +1304,20 @@ async function photosForPdf() { // carrega as fotos (dataURL + tamanho) antes de
   }
   return out;
 }
+function roomsPdf(doc) { // quadro de cômodos: área, pé-direito, piso, forro e observação
+  const rs = S.texts.filter(t => t.pd || t.piso || t.forro || t.obs); if (!rs.length) return 0;
+  doc.addPage("a4", "portrait"); doc.setTextColor(20, 48, 107);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text("QUADRO DE CÔMODOS" + (S.title ? " — " + S.title : ""), 12, 12);
+  const cols = [["Cômodo", 12], ["Área", 52], ["PD", 72], ["Piso", 88], ["Forro", 120], ["Observação", 146]];
+  let y = 22; doc.setFontSize(8.5); for (const [h, x] of cols) doc.text(h, x, y); doc.setLineWidth(0.3); doc.line(12, y + 1.5, 198, y + 1.5); y += 7;
+  doc.setFont("helvetica", "normal");
+  for (const t of S.texts) { const a = areaOf(t), ob = doc.splitTextToSize(t.obs || "", 52);
+    if (y + ob.length * 3.6 > 285) { doc.addPage("a4", "portrait"); y = 16; }
+    doc.text(doc.splitTextToSize(t.s, 38)[0], 12, y); doc.text(a ? fmt(a) + " m²" : "-", 52, y); doc.text(t.pd ? fmt(t.pd) : "-", 72, y);
+    doc.text(doc.splitTextToSize(t.piso || "-", 30)[0], 88, y); doc.text(doc.splitTextToSize(t.forro || "-", 24)[0], 120, y); if (ob.length) doc.text(ob, 146, y);
+    y += Math.max(1, ob.length) * 3.6 + 2.4; doc.setLineWidth(0.1); doc.line(12, y - 2.6, 198, y - 2.6); }
+  return 1;
+}
 function photosPdf(doc, list) { // duas fotos por folha A4 em pé, com o número e a observação
   if (!list || !list.length) return 0;
   for (let i = 0; i < list.length; i += 2) {
@@ -1585,7 +1615,7 @@ function buildDxf() {
   }
   if (L_("ink")) for (const n of S.notes || []) text("ANOTACAO", n, n.h, n.s, -(n.ang || 0) * 180 / Math.PI);
   for (const f of S.photos || []) text("ANOTACAO", f, 0.2, "F" + f.n + (f.t ? " " + f.t : ""));
-  if (L_("text")) for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
+  if (L_("text")) for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); if (t.pd) text("TEXTO", { x: t.x, y: t.y + (a ? 0.56 : 0.32) }, 0.13, "PD=" + fmt(t.pd)); }
   if (S.lot && L_("lot")) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
   if (L_("blk")) for (const b of S.blocks || []) for (const pl of blkPolys(b)) for (let i = 1; i < pl.length; i++) line("MOBILIARIO", pl[i - 1], pl[i]);
   for (const sh of S.shapes || []) {
@@ -1608,7 +1638,7 @@ function buildRevit() {
     janelas: S.openings.filter(o => o.kind === "window").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, altura: openH(o), peitoril: openPs(o), distanciaDoInicio: Math.round(gm.c * 1000) / 1000 }; }).filter(Boolean),
     formas: (S.shapes || []).map(sh => sh.t === "circle" ? { tipo: "circulo", centro: P(sh.c), raio: sh.r, tracejada: !!sh.dash } : { tipo: { line: "linha", rect: "retangulo", poly: "poligono" }[sh.t], pontos: shpVerts(sh).map(P), tracejada: !!sh.dash }),
     mobiliario: (S.blocks || []).map(b => ({ tipo: BLOCKS[b.type] ? BLOCKS[b.type].nm : b.type, centro: P(b), rotacao: -(b.rot || 0), largura: BLOCKS[b.type] && BLOCKS[b.type].w, profundidade: BLOCKS[b.type] && BLOCKS[b.type].d, espelhado: !!b.flip })),
-    ambientes: S.texts.map(t => ({ nome: t.s, ponto: P(t), area: Math.round(areaOf(t) * 100) / 100 })),
+    ambientes: S.texts.map(t => ({ nome: t.s, ponto: P(t), area: Math.round(areaOf(t) * 100) / 100, ...(t.pd ? { pe_direito: t.pd } : {}), ...(t.piso ? { piso: t.piso } : {}), ...(t.forro ? { forro: t.forro } : {}), ...(t.obs ? { obs: t.obs } : {}) })),
     terreno: S.lot ? S.lot.pts.map(P) : null,
     areas: { terreno: Math.round(r.terreno * 100) / 100, construida: Math.round(r.construida * 100) / 100, ocupacao: r.ocupacao }
   };
@@ -1658,6 +1688,7 @@ function draw() {
     ctx.fillText(t.s, p.x, p.y);
     const a = areaOf(t);
     if (a) { ctx.font = "500 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.fillText(fmt(a) + " m²", p.x, p.y + 16); }
+    const more = t.piso || t.forro || t.obs, rl = (t.pd ? "PD " + fmt(t.pd) : "") + (more ? (t.pd ? " ✎" : "✎") : ""); if (rl) { ctx.font = "500 10px 'IBM Plex Mono', monospace"; ctx.fillStyle = isSel ? COL.acc : COL.dim; ctx.fillText(rl, p.x, p.y + (a ? 30 : 16)); }
   }
   drawNeighborDims();
   // ponta selecionada
@@ -2804,18 +2835,26 @@ function openText(t, pos) {
   if (t) sel = { type: "text", id: t.id };
   $("textTitle").textContent = t ? "Editar texto" : "Nome do cômodo";
   $("textVal").value = t ? t.s : ""; $("textDel").hidden = !t; $("sheetText").hidden = false;
+  $("roomPd").value = t && t.pd ? fmt(t.pd) : ""; $("roomPd").placeholder = opt.lastPd ? fmt(opt.lastPd) : "2,80";
+  $("roomPdHint").textContent = !t ? (opt.lastPd ? "vazio = " + fmt(opt.lastPd) + " (o último)" : "") : "";
+  $("roomPiso").value = t && t.piso || ""; $("roomForro").value = t && t.forro || ""; $("roomObs").value = t && t.obs || "";
   setTimeout(() => $("textVal").focus(), 30); draw();
 }
 function textOk() {
   if (!textCtx) return; const s = $("textVal").value.trim();
   if (!s) { closeSheets(); return; }
   snapshot();
-  if (textCtx.t) textCtx.t.s = s;
-  else S.texts.push({ id: nid(), x: clean(textCtx.pos.x), y: clean(textCtx.pos.y), s });
+  let t = textCtx.t; if (t) t.s = s; else { t = { id: nid(), x: clean(textCtx.pos.x), y: clean(textCtx.pos.y), s }; S.texts.push(t); }
+  const pdTxt = $("roomPd").value.trim(), pd = pdTxt ? parseLen(pdTxt) : (!textCtx.t ? opt.lastPd || null : null);
+  if (pd && pd > 1 && pd < 12) { t.pd = clean(pd); opt.lastPd = t.pd; try { localStorage.setItem("croqui-lastpd", String(t.pd)); } catch (e) {} } else delete t.pd;
+  for (const [k, id, n] of [["piso", "roomPiso", 40], ["forro", "roomForro", 40], ["obs", "roomObs", 200]]) { const v = $(id).value.trim(); if (v) t[k] = v.slice(0, n); else delete t[k]; }
   closeSheets(); after();
 }
 $("textOk").onclick = textOk;
 $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk(); });
+for (const id of ["roomPd", "roomPiso", "roomForro", "roomObs"]) $(id).addEventListener("keydown", e => { if (e.key === "Enter") textOk(); e.stopPropagation(); });
+try { const v = parseFloat(localStorage.getItem("croqui-lastpd")); if (v > 1 && v < 12) opt.lastPd = v; } catch (e) {}
+function roomLine(t) { return [t.pd ? "PD " + fmt(t.pd) : "", t.piso || "", t.forro ? "forro " + t.forro.toLowerCase() : ""].filter(Boolean).join(" · "); }
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
@@ -2826,7 +2865,7 @@ $("expTitle").addEventListener("input", e => { S.title = e.target.value; save();
 function setTool(t) {
   snapCache = null;
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", photo: "Foto: toque no lugar do desenho onde a foto foi tirada. Toque num ícone de foto para ver, escrever a observação ou apagar. Arraste o ícone para mudar de lugar.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque em qualquer desenho (parede, linha, forma, texto, móvel) ou arraste uma janela. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome, o pé-direito, o piso e o forro. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", photo: "Foto: toque no lugar do desenho onde a foto foi tirada. Toque num ícone de foto para ver, escrever a observação ou apagar. Arraste o ícone para mudar de lugar.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque em qualquer desenho (parede, linha, forma, texto, móvel) ou arraste uma janela. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
   ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet(); if (t !== "shape") shpPoly = null; if (t === "shape") showShapeSheet(); if (t === "ink") showInkSheet();
@@ -2921,7 +2960,7 @@ function cleanProj(o) {
             openings: (Array.isArray(o.openings) ? o.openings : []).filter(q => q && typeof q.wall === "string").map(q => ({ id: nid(), wall: q.wall.slice(0, 40), pos: +q.pos || 0, w: Math.max(0.3, Math.min(5, +q.w || 0.8)), kind: q.kind === "window" ? "window" : "door", side: !!q.side, hinge: !!q.hinge, ...(+q.h > 0 && +q.h < 5 ? { h: +q.h } : {}), ...(isFinite(+q.ps) && q.ps !== undefined && q.ps !== null && +q.ps >= 0 && +q.ps < 5 ? { ps: +q.ps } : {}) })),
             dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
-            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
+            texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80), ...(+t.pd > 1 && +t.pd < 12 ? { pd: +t.pd } : {}), ...(typeof t.piso === "string" && t.piso ? { piso: t.piso.slice(0, 40) } : {}), ...(typeof t.forro === "string" && t.forro ? { forro: t.forro.slice(0, 40) } : {}), ...(typeof t.obs === "string" && t.obs ? { obs: t.obs.slice(0, 200) } : {}) })),
             shapes: shpClean(o.shapes),
             notes: (Array.isArray(o.notes) ? o.notes : []).filter(n => n && typeof n.s === "string" && isFinite(n.x) && isFinite(n.y)).slice(0, 2000).map(n => ({ id: nid(), x: +n.x, y: +n.y, s: n.s.slice(0, 30), h: Math.max(0.08, Math.min(1, +n.h || 0.2)), ang: isFinite(n.ang) ? +n.ang : 0 })),
             photos: (Array.isArray(o.photos) ? o.photos : []).filter(f => f && typeof f.id === "string" && isFinite(f.x) && isFinite(f.y)).slice(0, 300).map(f => ({ id: f.id.slice(0, 40), x: +f.x, y: +f.y, n: Math.max(1, Math.floor(+f.n) || 1), ...(typeof f.a === "string" && /^[0-9a-f]{32}$/.test(f.a) ? { a: f.a } : {}), ...(typeof f.t === "string" && f.t ? { t: f.t.slice(0, 300) } : {}) })),
@@ -3093,6 +3132,7 @@ $("expPdf").onclick = async () => {
   if (L_("text")) for (const t of S.texts) {
     const p = P(t); doc.text(t.s, p.x, p.y + 1, { align: "center" });
     const a = areaOf(t); if (a) { doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.text(fmt(a) + " m²", p.x, p.y + 4.4, { align: "center" }); doc.setFont("helvetica", "bold"); doc.setFontSize(8); }
+    if (t.pd) { doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.text("PD " + fmt(t.pd), p.x, p.y + (a ? 7.8 : 4.4), { align: "center" }); doc.setFont("helvetica", "bold"); doc.setFontSize(8); }
   }
   // carimbo
   const ty = ph - margin / 2 - titleH;
@@ -3121,9 +3161,9 @@ $("expPdf").onclick = async () => {
   doc.setLineWidth(0.25);
   for (let i = 0; i < sbm; i++) { if (i % 2 === 0) doc.setFillColor(20, 48, 107); else doc.setFillColor(255, 255, 255); doc.rect(sbx + i * mm, sby, mm, 1.4, "FD"); }
   doc.setFontSize(6.5); doc.text("0", sbx, sby + 4, { align: "center" }); doc.text(sbm + " m", sbx + sbm * mm, sby + 4, { align: "center" });
-  const nsk = skPdf(doc), nph = photosPdf(doc, phl);
+  const nsk = skPdf(doc), nrm = roomsPdf(doc), nph = photosPdf(doc, phl);
   const out = doc.output("blob");
-  $("expMsg").textContent = (nsk ? "PDF com a planta e " + nsk + (nsk > 1 ? " folhas" : " folha") + " de rascunho. Planta" : "PDF") + (nph ? " (+ " + nph + (nph > 1 ? " fotos" : " foto") + " no fim)" : "") + " na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
+  $("expMsg").textContent = (nsk ? "PDF com a planta e " + nsk + (nsk > 1 ? " folhas" : " folha") + " de rascunho. Planta" : "PDF") + (nrm ? " (+ quadro de cômodos)" : "") + (nph ? " (+ " + nph + (nph > 1 ? " fotos" : " foto") + " no fim)" : "") + " na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
   offer(fileBase() + ".pdf", out);
 };
 
@@ -3604,7 +3644,7 @@ function drawingSummary() {
   if (S.lot) { const sides = S.lot.pts.map((_, i) => { const [a, b] = lotSide(i); return sideRole(i).toLowerCase() + " " + fmt(dist(a, b)); }); L.push("Terreno: " + fmt(ar.terreno) + " m² (lados: " + sides.join(", ") + ")."); }
   if (ar.construida) L.push("Área construída: " + fmt(ar.construida) + " m²." + (ar.ocupacao !== null ? " Taxa de ocupação: " + (ar.ocupacao * 100).toFixed(1).replace(".", ",") + "%." : ""));
   if (ar.recuos.length) L.push("Recuos até a divisa: " + ar.recuos.map(q => q.role.toLowerCase() + " " + fmt(q.d)).join(", ") + ".");
-  if (S.texts.length) L.push("Cômodos (área útil): " + S.texts.map(t => t.s + (areaOf(t) ? " " + fmt(areaOf(t)) + " m²" : "")).join("; ") + ".");
+  if (S.texts.length) L.push("Cômodos (área útil): " + S.texts.map(t => t.s + (areaOf(t) ? " " + fmt(areaOf(t)) + " m²" : "") + (roomLine(t) ? " [" + roomLine(t) + "]" : "") + (t.obs ? " obs: " + t.obs : "")).join("; ") + ".");
   L.push("Paredes (" + S.walls.length + "), eixo de/até e espessura: " + S.walls.slice(0, 120).map(w => "(" + fmt(w.a.x) + ";" + fmt(w.a.y) + ")-(" + fmt(w.b.x) + ";" + fmt(w.b.y) + ") " + Math.round(TH(w) * 100) + "cm").join(", ") + ".");
   const es = esquadrias(); if (es.length) L.push("Esquadrias: " + es.map(e => e.code + " " + e.n + "x " + fmt(e.w) + "x" + fmt(e.h) + (e.ps !== null ? " peitoril " + fmt(e.ps) : "")).join("; ") + ".");
   if (S.blocks && S.blocks.length) L.push("Móveis: " + S.blocks.map(b => (BLOCKS[b.type] || {}).nm).filter(Boolean).join(", ") + ".");
