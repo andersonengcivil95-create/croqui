@@ -55,6 +55,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
 .tool.on{background:var(--chrome-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 .tool svg{width:22px;height:22px}
 .sep{width:1px;background:var(--line);margin:6px 2px}
+.inkconv{position:absolute;right:16px;top:12px;z-index:6;border-radius:999px;padding:8px 16px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .hint{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:rgba(15,47,104,.88);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:12.5px;max-width:calc(100% - 32px);text-align:center;pointer-events:none;transition:opacity .3s}
 .scalebar{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:12px;font-family:var(--font-num);font-size:11px;color:var(--ink-soft);pointer-events:none}
 .scalebar i{display:block;height:6px;border:1.5px solid var(--ink);border-top:0;margin-top:3px}
@@ -169,6 +170,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="tool" id="skClear" title="Apagar tudo desta folha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Limpar</button>
       </div>
     </div>
+    <button class="btn primary inkconv" id="inkConv" hidden title="Transforma as linhas retas do pincel em paredes">▦ Linhas → paredes</button>
     <div class="hint" id="hint">Risque as paredes à vontade. As medidas você indica depois, em Medida.</div>
     <div class="scalebar" id="scalebar"><span>1 m</span><i id="scalebarI" style="width:60px"></i></div>
     <div class="zoomctl">
@@ -281,6 +283,14 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <div class="row"><button class="btn primary" id="shpApply">Aplicar medida</button><button class="btn" id="shpSelDash">┄ Tracejar esta</button><button class="btn danger" id="shpDel">Apagar</button></div>
       </div>
       <p class="note" id="shpHelp"></p>
+    </div>
+
+    <div class="sheet" id="sheetInk" hidden>
+      <h3><span>Pincel</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row"><button class="btn on" data-ink="free">✎ Livre</button><button class="btn" data-ink="line">／ Linha reta</button></div>
+      <div class="row"><button class="btn on" data-inkc="w">Branco</button><button class="btn" data-inkc="y" style="color:var(--accent)">Amarelo</button></div>
+      <div class="row"><button class="btn primary" id="inkConv2">▦ Transformar linhas em paredes</button></div>
+      <p class="note" id="inkHelp"></p>
     </div>
 
     <!-- painel: camadas -->
@@ -482,7 +492,7 @@ let ctx = cv.getContext("2d");
 const STORE = "croqui-anderson-v1";
 
 /* ---------- estado ---------- */
-let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], sk: [], lot: null, title: "" };
+let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], notes: [], sk: [], lot: null, title: "" };
 var skOn = false, skDraw = () => {};
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
@@ -523,7 +533,7 @@ const EXAMPLE = () => {
 
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (!Array.isArray(o.shapes)) o.shapes = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
+  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (!Array.isArray(o.shapes)) o.shapes = []; if (!Array.isArray(o.notes)) o.notes = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
   return null;
 }
 function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
@@ -967,15 +977,58 @@ function inkPath(pts) {
   pts.forEach((q, i) => { const s2 = toS({ x: q[0], y: q[1] }); i ? ctx.lineTo(s2.x, s2.y) : ctx.moveTo(s2.x, s2.y); });
   if (pts.length === 1) { const s2 = toS({ x: pts[0][0], y: pts[0][1] }); ctx.lineTo(s2.x + 0.1, s2.y); }
 }
+function inkLines() { return S.inks.filter(k => k.line && k.pts.length === 2); }
+function inkConvUpd() { const n = inkLines().length, b = $("inkConv"); if (!b) return; b.hidden = !n || skOn; if (n) b.textContent = "▦ " + n + (n > 1 ? " linhas → paredes" : " linha → parede"); }
+function inkToWalls() { // linhas retas do pincel viram paredes (pontas próximas se juntam e grudam nas paredes existentes)
+  const ls = inkLines(); if (!ls.length) { toast("Não há linhas retas do pincel. Use Pincel → Linha reta."); return; }
+  snapshot(); const tol = 0.15, pts = [];
+  const weld = q => { let p = { x: q[0], y: q[1] };
+    for (const o of pts) if (dist(o, p) < tol) return o;
+    let best = null, bd = tol; for (const e of endpoints()) { const d = dist(e, p); if (d < bd) { bd = d; best = e; } }
+    if (best) p = { x: best.x, y: best.y }; else { let hw = null, hd = tol; for (const w of S.walls) { const r = segDist(p, w.a, w.b); if (r.d < hd) { hd = r.d; hw = r.q; } } if (hw) p = { x: hw.x, y: hw.y }; }
+    p = { x: clean(p.x), y: clean(p.y) }; pts.push(p); return p; };
+  const segs = ls.map(k => [weld(k.pts[0]), weld(k.pts[1])]), fixed = new Set(pts.filter(p => endpoints().some(e => dist(e, p) < 1e-6)));
+  for (let it = 0; it < 3; it++) for (const [A, B] of segs) { // pontas soldadas: endireita o que ficou quase no esquadro
+    const dx = Math.abs(A.x - B.x), dy = Math.abs(A.y - B.y);
+    for (const [ax, small, big] of [["y", dy, dx], ["x", dx, dy]]) if (small > 1e-9 && small < Math.max(0.06, big * 0.03) && big > 0.05) {
+      const v = fixed.has(A) ? A[ax] : fixed.has(B) ? B[ax] : clean(opt.round ? r5((A[ax] + B[ax]) / 2) : (A[ax] + B[ax]) / 2); if (!fixed.has(A)) A[ax] = v; if (!fixed.has(B)) B[ax] = v; }
+  }
+  const fresh = [];
+  for (const [A, B] of segs) { if (dist(A, B) < 0.05) continue; fresh.push({ id: nid(), a: { x: clean(A.x), y: clean(A.y) }, b: { x: clean(B.x), y: clean(B.y) }, t: opt.thick }); }
+  const ids = new Set(ls.map(k => k.id)); S.inks = S.inks.filter(k => !ids.has(k.id));
+  if (!fresh.length) { after(); return; }
+  const why = alignFaces(fresh); S.walls.push(...fresh); after();
+  toast(fresh.length + (fresh.length > 1 ? " paredes criadas" : " parede criada") + " com " + fmt(opt.thick).replace(/^0,/, "0,") + " m. Desfazer volta as linhas." + (why ? " " + why : ""));
+}
 function drawInks() {
   ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = Math.max(1.6, INK_W * view.k);
   if (L_("ink")) for (const k of S.inks) { ctx.strokeStyle = k.c === "y" ? COL.acc : COL.wall; inkPath(k.pts); ctx.stroke(); }
-  if (inkCur) { ctx.strokeStyle = inkCur.c === "y" ? COL.acc : COL.wall; inkPath(inkCur.pts); ctx.stroke(); }
-  ctx.lineCap = "square"; ctx.lineJoin = "miter";
+  if (inkCur) { ctx.strokeStyle = inkCur.c === "y" ? COL.acc : COL.wall; inkPath(inkCur.pts); ctx.stroke();
+    if (inkCur.line) { const a = { x: inkCur.pts[0][0], y: inkCur.pts[0][1] }, b = { x: inkCur.pts[1][0], y: inkCur.pts[1][1] }, L = dist(a, b);
+      if (L > 0.02) { const m = toS({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }); ctx.save(); ctx.font = "600 13px ui-monospace,monospace"; ctx.fillStyle = COL.acc; ctx.textAlign = "center"; ctx.fillText(fmt(L), m.x, m.y - 10); ctx.restore(); } } }
+  ctx.lineCap = "square"; ctx.lineJoin = "miter"; inkConvUpd();
+}
+function inkLineEnd(a0, w0) { // ponta da linha reta: ímã nas paredes/pontas, senão 45/90 e comprimento a cada 5 cm
+  const a = { x: a0[0], y: a0[1] }, rd = opt.round; opt.round = false; const m = magnetFree(w0, 14 / view.k, [a]); opt.round = rd;
+  if (m.x !== w0.x || m.y !== w0.y) return [clean(m.x), clean(m.y)];
+  let L = dist(a, w0); if (opt.round) L = r5(L); let ang = Math.atan2(w0.y - a.y, w0.x - a.x);
+  if (opt.ortho) { const st = Math.PI / 4; ang = Math.round(ang / st) * st; }
+  return [clean(a.x + Math.cos(ang) * L), clean(a.y + Math.sin(ang) * L)];
+}
+function inkStraight(k) { // risco quase reto (desvio até 5% do comprimento) vira reta; com 45/90 ligado, prende o ângulo
+  const P = k.pts; if (P.length < 3) return false;
+  const a = { x: P[0][0], y: P[0][1] }, b = { x: P[P.length - 1][0], y: P[P.length - 1][1] }, L = dist(a, b);
+  if (L * view.k < 40) return false;
+  let path = 0, dev = 0; for (let i = 1; i < P.length; i++) { const q = { x: P[i][0], y: P[i][1] }; path += dist(q, { x: P[i - 1][0], y: P[i - 1][1] }); dev = Math.max(dev, segDist(q, a, b).d); }
+  if (dev > Math.max(4 / view.k, L * 0.05) || path > L * 1.12) return false;
+  let e = b; const LL = opt.round ? Math.max(0.05, r5(L)) : L;
+  if (opt.ortho) { const ang = Math.atan2(b.y - a.y, b.x - a.x), st = Math.PI / 4, sa = Math.round(ang / st) * st; if (Math.abs(ang - sa) < 0.18) e = { x: a.x + Math.cos(sa) * LL, y: a.y + Math.sin(sa) * LL }; }
+  k.pts = [[clean(a.x), clean(a.y)], [clean(e.x), clean(e.y)]]; k.line = true; return true;
 }
 /* ---------- escrita inteligente: P = porta, J = janela, arco = porta (sem internet) ---------- */
 const smart = { strokes: [], timer: null };
 function smartQueue(k) {
+  clearTimeout(numRead.timer); if (numRead.pending.length) numRead.timer = setTimeout(numRun, 1600);
   if (!opt.smartInk) return;
   smart.strokes.push(k); if (smart.timer) clearTimeout(smart.timer);
   smart.timer = setTimeout(smartRun, 750);
@@ -1033,9 +1086,10 @@ function nearestWall(p, maxM) {
 }
 function smartRun() {
   smart.timer = null; const group = smart.strokes; smart.strokes = [];
-  if (!group.length || !S.walls.length) return;
+  if (!group.length) return;
+  if (!S.walls.length) { numQueue(group); return; }
   const all = []; for (const k of group) for (const q of k.pts) all.push({ x: q[0], y: q[1] });
-  if (all.length < 5) return;
+  if (all.length < 5) { numQueue(group); return; }
   let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; for (const p of all) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
   const size = Math.max(maxx - minx, maxy - miny);
   const drop = () => { const ids = new Set(group.map(k => k.id)); S.inks = S.inks.filter(k => !ids.has(k.id)); };
@@ -1060,8 +1114,8 @@ function smartRun() {
     }
   }
   // letras P e J
-  if (size > 2.5 || group.length > 2) return;
-  const kind = glyphOf(all); if (!kind) return;
+  const kind = size > 2.5 || group.length > 2 || group.every(k => k.line) ? null : glyphOf(all);
+  if (!kind) { numQueue(group); return; }
   const c = { x: (minx + maxx) / 2, y: (miny + maxy) / 2 }, hit = nearestWall(c, Math.max(0.8, size * 1.2)); if (!hit) return;
   const w = hit.w, L = dist(w.a, w.b), ow = Math.min(kind === "door" ? 0.8 : 1.2, L);
   let pos = hit.t * L; if (opt.round) pos = r5(pos); pos = Math.max(ow / 2, Math.min(L - ow / 2, pos));
@@ -1070,6 +1124,58 @@ function smartRun() {
   S.openings.push(o);
   if (kind === "door") { const g2 = openGeom(o); if (g2 && dot(sub(centroid(), add(w.a, mul(g2.u, pos))), g2.side) < 0) o.side = true; }
   after(); openOpening(o); toast(kind === "door" ? "P virou porta" : "J virou janela");
+}
+const numRead = { pending: [], timer: null, busy: false, ok: null };
+function numQueue(group) {
+  if (opt.readNums === false || group.every(k => k.line)) return;
+  numRead.pending.push(...group.filter(k => !k.line)); clearTimeout(numRead.timer); numRead.timer = setTimeout(numRun, 900);
+}
+async function numSampler() {
+  if (numRead.ok === false) return null;
+  try { if (!(window.claude && window.claude.use)) { numRead.ok = false; return null; } const sm = await window.claude.use("sample"); if (!sm) { numRead.ok = false; return null; }
+    const lim = await sm.limits().catch(() => null); if (!lim || !lim.images) { numRead.ok = false; return null; } numRead.ok = true; return sm; } catch (e) { numRead.ok = false; return null; }
+}
+function inkImage(group, box) {
+  const pad = 0.15, W0 = box.maxx - box.minx + pad * 2, H0 = box.maxy - box.miny + pad * 2, sc = Math.min(600 / W0, 300 / H0, 900);
+  const c = document.createElement("canvas"); c.width = Math.max(40, Math.round(W0 * sc)); c.height = Math.max(40, Math.round(H0 * sc));
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.strokeStyle = "#000"; g.lineWidth = Math.max(3, c.height / 40); g.lineCap = "round"; g.lineJoin = "round";
+  for (const k of group) { g.beginPath(); k.pts.forEach((q, i) => { const x = (q[0] - box.minx + pad) * sc, y = (q[1] - box.miny + pad) * sc; i ? g.lineTo(x, y) : g.moveTo(x, y); }); if (k.pts.length === 1) g.lineTo((k.pts[0][0] - box.minx + pad) * sc + 1, (k.pts[0][1] - box.miny + pad) * sc); g.stroke(); }
+  return new Promise(r => c.toBlob(r, "image/png"));
+}
+async function numRun() {
+  numRead.timer = null; const group = numRead.pending.filter(k => S.inks.includes(k)); numRead.pending = [];
+  if (!group.length || numRead.busy) return;
+  const all = []; for (const k of group) for (const q of k.pts) all.push({ x: q[0], y: q[1] });
+  let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; for (const p of all) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
+  const w = maxx - minx, h = maxy - miny; if (w > 4 || h > 2 || Math.max(w, h) < 0.08) return;
+  const sm = await numSampler(); if (!sm) return;
+  numRead.busy = true; toast("Lendo o número escrito...");
+  try {
+    const blob = await inkImage(group, { minx, miny, maxx, maxy });
+    const r = await sm("Esta imagem é uma anotação escrita à mão numa planta de casa (engenharia, Brasil). Se for um número ou medida (ex.: 2,80 ou 3.5 ou 12 ou 1,20x2,10 ou 45%), responda SÓ o texto, usando vírgula como decimal. Se não for número ou não der para ler com segurança, responda só NADA.", { images: [blob], modelTier: "quick", cache: false });
+    let t = String(r && r.text || "").trim().replace(/^["'`]+|["'`.]+$/g, "").replace(/\s+/g, "");
+    if (/^[0-9][0-9.,x×/%m²-]{0,14}$/i.test(t) && !/NADA/i.test(t)) {
+      t = t.replace(/(\d)\.(\d)/g, "$1,$2");
+      const ids = new Set(group.map(k => k.id)); if (!group.every(k => S.inks.includes(k))) { numRead.busy = false; return; }
+      snapshot(); S.inks = S.inks.filter(k => !ids.has(k.id));
+      S.notes.push({ id: nid(), x: clean((minx + maxx) / 2), y: clean((miny + maxy) / 2), s: t, h: clean(Math.max(0.12, Math.min(0.6, h * 0.8))), ang: h > w * 1.6 ? -Math.PI / 2 : 0 });
+      after(); toast("Escrito: " + t + " (Desfazer volta o rabisco)");
+    } else toast("Não reconheci como número; ficou como rabisco");
+  } catch (e) { if (e && e.code === "not_granted") { opt.readNums = false; toast("Leitura de números desligada: o Claude não foi liberado"); } }
+  numRead.busy = false;
+}
+function drawNotes() {
+  if (!L_("ink")) return;
+  for (const n of S.notes || []) {
+    const q = toS(n), px = n.h * view.k; if (px < 5) continue;
+    const isSel = sel && sel.type === "note" && sel.id === n.id;
+    ctx.save(); ctx.translate(q.x, q.y); if (n.ang) ctx.rotate(n.ang);
+    ctx.font = "600 " + px + "px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = isSel ? COL.acc : COL.wall; ctx.fillText(n.s, 0, 0); ctx.restore();
+  }
+}
+function hitNote(sp) {
+  for (let i = (S.notes || []).length - 1; i >= 0; i--) { const n = S.notes[i], q = toS(n), hw = n.s.length * n.h * view.k * 0.32 + 6, hh = n.h * view.k * 0.6 + 6; const v = sub(sp, q), a = -(n.ang || 0), x = v.x * Math.cos(a) - v.y * Math.sin(a), y = v.x * Math.sin(a) + v.y * Math.cos(a); if (Math.abs(x) <= hw && Math.abs(y) <= hh) return n; }
+  return null;
 }
 function hitInk(sp) {
   for (let j = S.inks.length - 1; j >= 0; j--) {
@@ -1336,6 +1442,7 @@ function buildDxf() {
     line("COTA", d.a, d.b); for (const q of [d.a, d.b]) line("COTA", sub(q, tk), add(q, tk));
     text("COTA", add(mul(add(d.a, d.b), .5), mul(n, 0.15)), 0.15, fmt(L), -ang * 180 / Math.PI);
   }
+  if (L_("ink")) for (const n of S.notes || []) text("ANOTACAO", n, n.h, n.s, -(n.ang || 0) * 180 / Math.PI);
   if (L_("text")) for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
   if (S.lot && L_("lot")) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
   if (L_("blk")) for (const b of S.blocks || []) for (const pl of blkPolys(b)) for (let i = 1; i < pl.length; i++) line("MOBILIARIO", pl[i - 1], pl[i]);
@@ -1397,6 +1504,7 @@ function draw() {
   drawShapes();
   drawOpenings();
   drawInks();
+  drawNotes();
   for (const w of S.walls) if (showDim(w)) drawDim(w, c, (sel && sel.type === "wall" && sel.id === w.id) || (tool === "pick" && multi.has(w.id)));
   drawFixedDims();
   // textos
@@ -2049,7 +2157,9 @@ cv.addEventListener("pointerdown", ev => {
   if (ev.button === 1 || ev.button === 2 || tool === "pan" || fingerOnly) { drag = { mode: "pan", last: p }; return; }
   if (tool === "draw" && opt.rect) { const a = magnetFree(toW(p), 16 / view.k); drag = { mode: "rect", a, b: a }; }
   else if (tool === "draw") { rawStroke = [p]; drag = { mode: "draw" }; }
-  else if (tool === "ink") { if (smart.timer) { clearTimeout(smart.timer); smart.timer = null; } const w0 = toW(p); inkCur = { id: nid(), c: opt.inkColor, pts: [[clean(w0.x), clean(w0.y)]] }; drag = { mode: "ink", last: p }; }
+  else if (tool === "ink") { if (smart.timer) { clearTimeout(smart.timer); smart.timer = null; } const w0 = toW(p); if (opt.inkLine) { const a0 = magnetFree(w0, 14 / view.k); inkCur = { id: nid(), c: opt.inkColor, line: true, pts: [[clean(a0.x), clean(a0.y)], [clean(a0.x), clean(a0.y)]] }; }
+    else inkCur = { id: nid(), c: opt.inkColor, pts: [[clean(w0.x), clean(w0.y)]] };
+    drag = { mode: "ink", last: p }; }
   else if (tool === "erase") { drag = { mode: "erase", did: false }; eraseAt(p); }
   else if (tool === "text") { drag = { mode: "textTap", start: p }; }
   else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
@@ -2109,7 +2219,8 @@ cv.addEventListener("pointermove", ev => {
   }
   if (drag.mode === "ink") {
     if (dist(p, drag.last) < 1.5) return; drag.last = p;
-    const w0 = toW(p); inkCur.pts.push([Math.round(w0.x * 1000) / 1000, Math.round(w0.y * 1000) / 1000]); draw(); return;
+    const w0 = toW(p);
+    if (inkCur.line) { inkCur.pts[1] = inkLineEnd(inkCur.pts[0], w0); draw(); return; } inkCur.pts.push([Math.round(w0.x * 1000) / 1000, Math.round(w0.y * 1000) / 1000]); draw(); return;
   }
   if (drag.mode === "draw") {
     const last = rawStroke[rawStroke.length - 1];
@@ -2202,7 +2313,8 @@ function endPtr(ev) {
   if (d.mode === "lotDraw") { const raw = rawStroke; rawStroke = null; live = null; if (raw && raw.length > 3) lotFromStroke(raw); else draw(); return; }
   if (d.mode === "lotTap") { openLot(d.si); return; }
   if (d.mode === "lotMove") { if (d.moved) after(); else openLot(null); return; }
-  if (d.mode === "ink") { if (inkCur) { snapshot(); S.inks.push(inkCur); smartQueue(inkCur); inkCur = null; after(); } return; }
+  if (d.mode === "ink") { if (inkCur && inkCur.line && dist({ x: inkCur.pts[0][0], y: inkCur.pts[0][1] }, { x: inkCur.pts[1][0], y: inkCur.pts[1][1] }) < 0.02) { inkCur = null; draw(); return; }
+    if (inkCur) { if (!inkCur.line) inkStraight(inkCur); snapshot(); S.inks.push(inkCur); smartQueue(inkCur); inkCur = null; after(); } return; }
   if (d.mode === "draw") {
     const pts = rawStroke ? straighten(rawStroke) : [];
     rawStroke = null; live = null;
@@ -2264,6 +2376,8 @@ $("zIn").onclick = () => zoomBy(1.3); $("zOut").onclick = () => zoomBy(1 / 1.3);
 function eraseAt(p) {
   const op = hitOpen(p);
   const ik = op ? null : hitInk(p);
+  const nt = op ? null : hitNote(p);
+  if (nt) { if (!drag.did) { snapshot(); drag.did = true; } S.notes = S.notes.filter(x => x !== nt); draw(); return; }
   const sh = op || ik ? null : hitShape(p, 8);
   if (sh && !hitWall(p, 8)) { if (!drag.did) { snapshot(); drag.did = true; } S.shapes = S.shapes.filter(x => x !== sh); if (sel) closeSheets(); draw(); return; }
   const bk = op || ik ? null : hitBlock(p);
@@ -2287,7 +2401,7 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 /* ---------- painéis ---------- */
 function closeSheets() {
   nbClose();
-  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk", "sheetShape"]) $(id).hidden = true;
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk", "sheetShape", "sheetInk"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
@@ -2462,16 +2576,16 @@ $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk();
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
-$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], sk: [], lot: null, title: "" }; shpPoly = null; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], notes: [], sk: [], lot: null, title: "" }; shpPoly = null; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
 $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
 function setTool(t) {
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
+  const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
-  ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet(); if (t !== "shape") shpPoly = null; if (t === "shape") showShapeSheet();
+  ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet(); if (t !== "shape") shpPoly = null; if (t === "shape") showShapeSheet(); if (t === "ink") showInkSheet();
   cv.style.cursor = t === "pan" ? "grab" : t === "erase" ? "cell" : t === "text" ? "text" : "crosshair";
 }
 document.querySelectorAll(".tool[data-tool]").forEach(b => b.addEventListener("click", () => {
@@ -2480,7 +2594,7 @@ document.querySelectorAll(".tool[data-tool]").forEach(b => b.addEventListener("c
   if (b.dataset.tool === "shape" && tool === "shape") { if ($("sheetShape").hidden) showShapeSheet(); else $("sheetShape").hidden = true; return; }
   if (b.dataset.tool === "block" && tool === "block") { if ($("sheetBlock").hidden) showBlockSheet(); else $("sheetBlock").hidden = true; return; }
   if (b.dataset.tool === "fillet" && tool === "fillet") { $("sheetMod").hidden = !$("sheetMod").hidden; return; }
-  if (b.dataset.tool === "ink" && tool === "ink") { opt.inkColor = opt.inkColor === "w" ? "y" : "w"; b.style.color = opt.inkColor === "y" ? "var(--accent)" : ""; toast(opt.inkColor === "y" ? "Pincel amarelo" : "Pincel branco"); return; }
+  if (b.dataset.tool === "ink" && tool === "ink") { if ($("sheetInk").hidden) showInkSheet(); else $("sheetInk").hidden = true; return; }
   setTool(b.dataset.tool);
 }));
 $("undo").onclick = undo; $("redo").onclick = redo;
@@ -2565,6 +2679,7 @@ function cleanProj(o) {
             blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
             texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
             shapes: shpClean(o.shapes),
+            notes: (Array.isArray(o.notes) ? o.notes : []).filter(n => n && typeof n.s === "string" && isFinite(n.x) && isFinite(n.y)).slice(0, 2000).map(n => ({ id: nid(), x: +n.x, y: +n.y, s: n.s.slice(0, 30), h: Math.max(0.08, Math.min(1, +n.h || 0.2)), ang: isFinite(n.ang) ? +n.ang : 0 })),
             sk: skClean(o.sk) };
 }
 $("fileOpen").onchange = e => {
@@ -2698,6 +2813,7 @@ $("expPdf").onclick = () => {
   // pincel
   doc.setLineCap("round"); doc.setLineJoin("round"); doc.setLineWidth(Math.max(0.2, INK_W * mm));
   if (L_("ink")) for (const k of S.inks) { const pts = k.pts.map(q => P({ x: q[0], y: q[1] })); for (let i = 1; i < pts.length; i++) doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y); }
+  if (L_("ink")) for (const n of S.notes || []) { const q = P(n), fs = Math.max(5, n.h * mm * 2.83); doc.setFont("courier", "bold"); doc.setFontSize(fs); const tw = doc.getTextWidth(n.s), a = n.ang || 0; doc.text(n.s, q.x - Math.cos(a) * tw / 2 + Math.sin(a) * fs * 0.12, q.y - Math.sin(a) * tw / 2 + Math.cos(a) * fs * 0.12, { angle: -a * 180 / Math.PI }); }
   doc.setLineCap("butt");
   // portas e janelas
   for (const o of S.openings) {
@@ -2887,6 +3003,16 @@ function shpUp(d) {
   }
   if (d.kind === "move") { if (d.moved) after(); sel = { type: "shape", id: d.s.id }; showShapeSheet(); }
 }
+function showInkSheet() {
+  $("sheetInk").hidden = false;
+  document.querySelectorAll("[data-ink]").forEach(b => b.classList.toggle("on", (b.dataset.ink === "line") === !!opt.inkLine));
+  document.querySelectorAll("[data-inkc]").forEach(b => b.classList.toggle("on", b.dataset.inkc === opt.inkColor));
+  $("inkHelp").textContent = opt.inkLine ? "Linha reta: arraste do começo ao fim. Com 45/90 ligado o ângulo fica preso, e a ponta gruda nas paredes." : "Livre: escreva à mão. Um risco quase reto vira reta sozinho.";
+  const tb = document.querySelector('.tool[data-tool=ink]'); if (tb) tb.style.color = opt.inkColor === "y" ? "var(--accent)" : "";
+}
+$("inkConv").onclick = inkToWalls; $("inkConv2").onclick = () => { $("sheetInk").hidden = true; inkToWalls(); };
+document.querySelectorAll("[data-ink]").forEach(b => b.onclick = () => { opt.inkLine = b.dataset.ink === "line"; showInkSheet(); });
+document.querySelectorAll("[data-inkc]").forEach(b => b.onclick = () => { opt.inkColor = b.dataset.inkc; showInkSheet(); });
 function showShapeSheet() {
   $("sheetShape").hidden = false;
   document.querySelectorAll("[data-shp]").forEach(b => b.classList.toggle("on", b.dataset.shp === opt.shape));
@@ -3266,7 +3392,7 @@ if (window.claude && typeof window.claude.use === "function") {
 /* ---------- início ---------- */
 window.__cq = { get S() { return S; }, view, toS: p => toS(p), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
 const saved = load();
-S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = []; if (!Array.isArray(S.shapes)) S.shapes = [];
+S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = []; if (!Array.isArray(S.shapes)) S.shapes = []; if (!Array.isArray(S.notes)) S.notes = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
 if (!saved) setTimeout(() => toast("Este é um exemplo. Toque em Novo para começar o seu."), 600);
 new ResizeObserver(resize).observe(stage);
