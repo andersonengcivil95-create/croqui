@@ -540,10 +540,10 @@ function load() {
   return null;
 }
 function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
-function undo() { if (!hist.length) return; redoStack.push(JSON.stringify(S)); S = JSON.parse(hist.pop()); closeSheets(); after(); }
-function redo() { if (!redoStack.length) return; hist.push(JSON.stringify(S)); S = JSON.parse(redoStack.pop()); closeSheets(); after(); }
+function undo() { snapCache = null; if (!hist.length) return; redoStack.push(JSON.stringify(S)); S = JSON.parse(hist.pop()); closeSheets(); after(); }
+function redo() { snapCache = null; if (!redoStack.length) return; hist.push(JSON.stringify(S)); S = JSON.parse(redoStack.pop()); closeSheets(); after(); }
 function updUndo() { $("undo").disabled = !hist.length; $("redo").disabled = !redoStack.length; }
-function after() { save(); updUndo(); draw(); if (skOn) skDraw(); if (projQueue) projQueue(); }
+function after() { snapCache = null; save(); updUndo(); draw(); if (skOn) skDraw(); if (projQueue) projQueue(); }
 var projQueue = null;
 
 /* ---------- geometria ---------- */
@@ -914,11 +914,12 @@ function nbTap(p) {
   const h = nbHits.find(q => Math.abs(p.x - q.x) <= q.hw && Math.abs(p.y - q.y) <= q.hh); if (!h) return false;
   { const w = hitWall(p, 10); if (w) { const r = segDist(p, toS(w.a), toS(w.b)); if (r.d < Math.hypot(p.x - h.x, p.y - h.y) - 2) return false; } } // a parede ganha do número
   nbCur = h; const ed = $("nbEd"); ed.style.left = h.x + "px"; ed.style.top = h.y + "px"; ed.hidden = false;
-  $("nbIn").value = fmt(h.c ? h.c.gap : h.g.d); setTimeout(() => { $("nbIn").focus(); $("nbIn").select(); }, 30);
+  $("nbIn").value = fmt(h.c ? h.c.gap : h.g ? h.g.d : h.ed.t); setTimeout(() => { $("nbIn").focus(); $("nbIn").select(); }, 30);
   return true;
 }
 function nbClose() { $("nbEd").hidden = true; nbCur = null; }
 $("nbOk").onclick = () => { const h = nbCur; if (!h) return; const v = $("nbIn").value; nbClose();
+  if (h.ed) { const x = parseLen0(v); if (x === null) { toast("Digite a distância em metros (0 encosta)"); return; } endDimApply(h.ed, x); return; }
   if (h.g) { const x = parseLen0(v); if (x === null) { toast("Digite o recuo em metros (0 encosta na divisa)"); return; } const sh = mul(h.g.n, h.g.d - x); movePicked(clean(sh.x), clean(sh.y), false); toast(x === 0 ? "Encostado na divisa (" + h.g.role.toLowerCase() + ")" : h.g.role + ": " + fmt(x) + " m"); return; }
   nbApply(h.w, h.c, v); };
 $("nbIn").addEventListener("keydown", e => { if (e.key === "Enter") $("nbOk").click(); else if (e.key === "Escape") nbClose(); e.stopPropagation(); });
@@ -947,9 +948,32 @@ function groupLotDims() {
     return { i, d: bd, p: best, foot: add(best, mul(n, bd)), n, role: sideRole(i) };
   });
 }
+function endDims(w) { // pontas livres: distância da face da ponta até a divisa ou parede mais perto, na direção da parede
+  const F = faceEnds(w); if (!F) return []; const { u } = F, out = [];
+  for (const [e, end, dir] of [[w.a, "a", mul(u, -1)], [w.b, "b", u]]) {
+    if (!F.sEnd[end].cap) continue;
+    let best = null, bt = 40;
+    const test = (a, b) => { const q = rayHit(e, dir, a, b); if (q) { const t = dist(e, q); if (t > 0.005 && t < bt) { bt = t; best = q; } } };
+    if (S.lot) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); test(a, b); });
+    for (const x of S.walls) if (x !== w) { const f = wallFaces(x); for (const [a, b] of f.lines.concat(f.caps)) test(a, b); }
+    if (best) out.push({ w, end, e: { x: e.x, y: e.y }, dir, t: bt, q: best });
+  }
+  return out;
+}
+function drawEndDims(w) {
+  for (const ed of endDims(w)) { const A = toS(ed.e), B = toS(ed.q); if (dist(A, B) < 2) continue; tempDim(A, B, fmt(ed.t));
+    nbHits.push({ ed, x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, hw: ctx.measureText(fmt(ed.t)).width / 2 + 6, hh: 11 }); }
+}
+function endDimApply(ed, v) { // muda o comprimento pela ponta livre (a outra ponta continua ligada)
+  const w = S.walls.find(x => x.id === ed.w.id); if (!w) return;
+  snapshot(); const k = ed.t - v; w[ed.end] = { x: clean(w[ed.end].x + ed.dir.x * k), y: clean(w[ed.end].y + ed.dir.y * k) };
+  after(); if (tool === "select") selectWall(w); else showPick();
+  toast(v === 0 ? "Parede encostada. Esticou " + fmt(k) + " m" : "Folga agora com " + fmt(v) + " m");
+}
 function drawNeighborDims() {
   if (exporting) return;
   nbHits = [];
+  if (tool === "pick" && multi.size === 1) { const w = pickWalls()[0]; if (w) { for (const c of neighbors(w)) drawOneNeighbor(w, c); drawEndDims(w); } return; }
   if (tool === "pick" && multi.size) {
     for (const g of groupLotDims()) { const A = toS(g.p), B = toS(g.foot); tempDim(A, B, fmt(g.d)); if (dist(A, B) >= 2) nbHits.push({ g, x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, hw: ctx.measureText(fmt(g.d)).width / 2 + 6, hh: 11 }); }
     if (multi.size === 1) { const w = pickWalls()[0]; if (w) for (const c of neighbors(w, false)) drawOneNeighbor(w, c); }
@@ -958,6 +982,7 @@ function drawNeighborDims() {
   if (!sel || sel.type !== "wall" || tool !== "select") return;
   const w = S.walls.find(x => x.id === sel.id); if (!w) return;
   for (const c of neighbors(w)) drawOneNeighbor(w, c);
+  drawEndDims(w);
 }
 function drawOneNeighbor(w, c) {
   {
@@ -2137,25 +2162,30 @@ function rectApply() {
 }
 
 /* ---------- Medir (DIST do CAD) ---------- */
+let snapCache = null;
 function snapCands() {
+  if (snapCache && snapCache.c) return snapCache.c;
   const out = [];
   for (const w of S.walls) {
-    out.push({ p: w.a, k: "end" }, { p: w.b, k: "end" }, { p: mul(add(w.a, w.b), .5), k: "mid" });
     const f = wallFaces(w); for (const [a, b] of f.lines.concat(f.caps)) out.push({ p: a, k: "end" }, { p: b, k: "end" });
+    if (!f.lines.length) out.push({ p: w.a, k: "end" }, { p: w.b, k: "end" });
   }
   for (const w of S.walls) { const f = wallFaces(w); for (const [a, b] of f.lines) out.push({ p: mul(add(a, b), .5), k: "mid" }); }
   for (const o of S.openings) { const g = openGeom(o); if (g) out.push({ p: g.p1, k: "end" }, { p: g.p2, k: "end" }, { p: mul(add(g.p1, g.p2), .5), k: "mid" }); }
   if (S.lot) S.lot.pts.forEach((q, i) => { const [a, b] = lotSide(i); out.push({ p: q, k: "end" }, { p: mul(add(a, b), .5), k: "mid" }); });
   for (const [a, b] of drawSegs()) out.push({ p: a, k: "end" }, { p: b, k: "end" }, { p: mul(add(a, b), .5), k: "mid" });
   for (const sh of S.shapes || []) if (sh.t === "circle") out.push({ p: sh.c, k: "cen" }, ...[[1, 0], [0, 1], [-1, 0], [0, -1]].map(([x, y]) => ({ p: { x: sh.c.x + x * sh.r, y: sh.c.y + y * sh.r }, k: "end" })));
+  (snapCache || (snapCache = {})).c = out;
   for (const d of S.dims || []) out.push({ p: d.a, k: "end" }, { p: d.b, k: "end" });
   return out;
 }
 function snapLines() {
+  if (snapCache && snapCache.l) return snapCache.l;
   const out = [];
-  for (const w of S.walls) { out.push([w.a, w.b]); const f = wallFaces(w); out.push(...f.lines); }
+  for (const w of S.walls) { const f = wallFaces(w); out.push(...f.lines, ...f.caps); if (!f.lines.length) out.push([w.a, w.b]); }
   if (S.lot) S.lot.pts.forEach((_, i) => out.push(lotSide(i)));
   out.push(...drawSegs());
+  (snapCache || (snapCache = {})).l = out;
   return out;
 }
 function drawSegs() { // trechos retos das linhas do pincel e das formas (para o ímã de ponta, meio e perto)
@@ -2179,7 +2209,7 @@ function snapAt(sp) {
   let nb = null, nd = 12;
   for (const [a, b] of lines) { const r = segDist(sp, toS(a), toS(b)); if (r.d < nd) { nd = r.d; nb = add(a, mul(sub(b, a), r.t)); } }
   if (nb) return { p: nb, k: "near" };
-  return { p: { x: opt.round ? r5(wp.x) : wp.x, y: opt.round ? r5(wp.y) : wp.y }, k: "free" };
+  return { p: { x: clean(wp.x), y: clean(wp.y) }, k: "free" }; // ponto solto: sem grade de 5 cm, para não "travar"
 }
 function drawMeasure() {
   if (exporting || tool !== "measure") return;
@@ -2273,7 +2303,7 @@ cv.addEventListener("pointerdown", ev => {
   else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
   else if (tool === "shape") { drag = shpDown(p); }
   else if (tool === "block") { const b = hitBlock(p); drag = b ? { mode: "blkDrag", b, start: p, moved: false } : { mode: "blkTap", start: p }; }
-  else if (tool === "measure") { msr.hover = snapAt(p); drag = { mode: "msr" }; draw(); }
+  else if (tool === "measure") { snapCache = null; msr.hover = snapAt(p); drag = { mode: "msr" }; draw(); }
   else if (tool === "pick") {
     const w = hitWall(p), ob = w ? null : hitObj(p);
     if (w) { const was = multi.has(w.id); multi.add(w.id); drag = { mode: "pickTap", w, was, start: p, startW: toW(p) }; draw(); }
@@ -2693,6 +2723,7 @@ $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title &&
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
 function setTool(t) {
+  snapCache = null;
   tool = t; document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. No painel do Pincel você escolhe Livre ou Linha reta e a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque em qualquer desenho (parede, linha, forma, texto, móvel) ou arraste uma janela. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
@@ -3505,7 +3536,7 @@ if (window.claude && typeof window.claude.use === "function") {
 }
 
 /* ---------- início ---------- */
-window.__cq = { get S() { return S; }, view, toS: p => toS(p), nbg: () => nbHits.filter(h => h.g).map(h => ({ x: h.x, y: h.y, r: h.g.role, d: h.g.d })), dbg: () => [...multi, ...multiO].join(" "), selId: () => sel ? sel.id : "", hov: () => msr.hover, nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
+window.__cq = { get S() { return S; }, view, toS: p => toS(p), nbg: () => nbHits.filter(h => h.g).map(h => ({ x: h.x, y: h.y, r: h.g.role, d: h.g.d })), dbg: () => [...multi, ...multiO].join(" "), selId: () => sel ? sel.id : "", hov: () => msr.hover, ends: () => nbHits.filter(h => h.ed).map(h => ({ x: h.x, y: h.y, t: h.ed.t, end: h.ed.end })), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
 const saved = load();
 S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = []; if (!Array.isArray(S.shapes)) S.shapes = []; if (!Array.isArray(S.notes)) S.notes = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
