@@ -268,6 +268,21 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
       <p class="note">Escolha um bloco e toque na planta. Perto de uma parede ele encosta sozinho, de costas para ela. Toque num bloco para girar, espelhar ou apagar; arraste para mover.</p>
     </div>
 
+    <div class="sheet" id="sheetShape" hidden>
+      <h3><span id="shpTitle">Formas geométricas</span><button class="x" data-close aria-label="Fechar">×</button></h3>
+      <div class="row"><button class="btn" data-shp="line">／ Linha</button><button class="btn on" data-shp="rect">▭ Retângulo</button><button class="btn" data-shp="circle">◯ Círculo</button><button class="btn" data-shp="poly">⬠ Polígono</button></div>
+      <div class="row"><button class="btn" id="shpDash" title="Traço tracejado para projeção de beiral, laje, piscina">┄ Novas tracejadas</button><button class="btn primary" id="shpDone" hidden>Concluir polígono</button></div>
+      <div id="shpEdit" hidden style="display:flex;flex-direction:column;gap:8px">
+        <div class="row" id="shpRowW"><span class="note" style="min-width:70px">Largura</span><label class="field num"><input id="shpW" inputmode="decimal" autocomplete="off"><span>m</span></label></div>
+        <div class="row" id="shpRowH"><span class="note" style="min-width:70px">Altura</span><label class="field num"><input id="shpH" inputmode="decimal" autocomplete="off"><span>m</span></label></div>
+        <div class="row" id="shpRowL"><span class="note" style="min-width:70px">Compr.</span><label class="field num"><input id="shpL" inputmode="decimal" autocomplete="off"><span>m</span></label></div>
+        <div class="row" id="shpRowD"><span class="note" style="min-width:70px">Diâmetro</span><label class="field num"><input id="shpD" inputmode="decimal" autocomplete="off"><span>m</span></label></div>
+        <p class="note" id="shpInfo"></p>
+        <div class="row"><button class="btn primary" id="shpApply">Aplicar medida</button><button class="btn" id="shpSelDash">┄ Tracejar esta</button><button class="btn danger" id="shpDel">Apagar</button></div>
+      </div>
+      <p class="note" id="shpHelp"></p>
+    </div>
+
     <!-- painel: camadas -->
     <div class="sheet" id="sheetLayers" hidden>
       <h3><span>Camadas</span><button class="x" data-close aria-label="Fechar">×</button></h3>
@@ -443,6 +458,7 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
     <button class="tool" data-tool="window" title="Janela (J)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4M18 12h4M6 9v6M18 9v6M6 10.5h12M6 13.5h12"/></svg>Janela</button>
     <button class="tool" data-tool="lot" title="Terreno (G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l18-2v16l-18 1z" stroke-dasharray="4 2 1 2"/></svg>Terreno</button>
     <button class="tool" data-tool="fillet" title="Modificar: canto (F), estender/cortar (X), quebrar (Q)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V9a5 5 0 0 1 5-5h11"/><path d="M4 4v3M4 4h3" stroke-dasharray="1.5 2"/></svg>Modificar</button>
+    <button class="tool" data-tool="shape" title="Formas geométricas: linha, retângulo, círculo, polígono (O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="5"/><path d="M13 3h8v8h-8z"/></svg>Formas</button>
     <button class="tool" data-tool="block" title="Móveis e louças (K)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="9" width="18" height="9" rx="2"/><path d="M6 9V6h12v3M5 18v2M19 18v2"/></svg>Móveis</button>
     <button class="tool" data-tool="erase" title="Apagar (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H8l-5-5L14 4l7 7-6 6"/><path d="M7 11l6 6"/></svg>Apagar</button>
     <button class="tool" data-tool="pan" title="Mover a tela (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg>Mover</button>
@@ -461,7 +477,7 @@ let ctx = cv.getContext("2d");
 const STORE = "croqui-anderson-v1";
 
 /* ---------- estado ---------- */
-let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], sk: [], lot: null, title: "" };
+let S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], sk: [], lot: null, title: "" };
 var skOn = false, skDraw = () => {};
 let uid = 1;
 const nid = () => "i" + (uid++) + Math.random().toString(36).slice(2, 6);
@@ -470,8 +486,8 @@ const opt = { ortho: true, round: true, thick: 0.15, allDims: false, dimMode: "f
 let ext1 = null, rectCtx = null;
 const multi = new Set();   // paredes da ferramenta Selecionar
 let msr = { a: null, b: null, hover: null };
-const LAYERS = { dims: "Cotas", text: "Nomes e áreas", lbl: "Medidas de portas e janelas", blk: "Móveis e louças", ink: "Pincel", lot: "Terreno" };
-const lay = { dims: true, text: true, lbl: true, blk: true, ink: true, lot: true };
+const LAYERS = { dims: "Cotas", text: "Nomes e áreas", lbl: "Medidas de portas e janelas", blk: "Móveis e louças", shp: "Medidas das formas", ink: "Pincel", lot: "Terreno" };
+const lay = { dims: true, text: true, lbl: true, blk: true, shp: true, ink: true, lot: true };
 try { Object.assign(lay, JSON.parse(localStorage.getItem("croqui-anderson-v1-lay") || "{}")); } catch (e) {}
 const L_ = k => lay[k] !== false;
 const showDim = w => L_("dims") && (opt.allDims || !!w.dim);
@@ -502,7 +518,7 @@ const EXAMPLE = () => {
 
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
 function load() {
-  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
+  try { const t = localStorage.getItem(STORE); if (t) { const o = JSON.parse(t); if (o && Array.isArray(o.walls)) { if (!Array.isArray(o.openings)) o.openings = []; if (!Array.isArray(o.inks)) o.inks = []; if (!Array.isArray(o.dims)) o.dims = []; if (!Array.isArray(o.blocks)) o.blocks = []; if (!Array.isArray(o.sk)) o.sk = []; if (!Array.isArray(o.shapes)) o.shapes = []; if (o.lot && !Array.isArray(o.lot.pts)) o.lot = null; return o; } } } catch (e) {}
   return null;
 }
 function snapshot() { hist.push(JSON.stringify(S)); if (hist.length > 200) hist.shift(); redoStack.length = 0; updUndo(); }
@@ -576,6 +592,7 @@ function straighten(rawS) {
     // 1) ímã num ponto existente
     let best = null, bd = tol;
     for (const p of pool) { const dd = dist(p, cand); if (dd < bd) { bd = dd; best = p; } }
+    if (best && opt.ortho) { const off = sub(best, prev), perp = Math.abs(off.x * d.y - off.y * d.x); if (perp > 0.01) { const t = dot(off, d); best = null; if (t > minL) cand = add(prev, mul(d, t)); } } // ponto fora do esquadro: só alinha
     if (best) cand = { x: best.x, y: best.y };
     else {
       // 2) encontra uma parede existente no caminho
@@ -1257,7 +1274,7 @@ function wallFaces(w) {
 function buildDxf() {
   const out = [], f = v => (Math.round(v * 10000) / 10000).toString();
   const X = p => f(p.x), Y = p => f(-p.y);
-  const layers = [["PAREDE", 7], ["PAREDE_EIXO", 8], ["PORTA", 3], ["JANELA", 4], ["COTA", 1], ["TEXTO", 2], ["TERRENO", 6], ["ANOTACAO", 5], ["MOBILIARIO", 8]];
+  const layers = [["PAREDE", 7], ["PAREDE_EIXO", 8], ["PORTA", 3], ["JANELA", 4], ["COTA", 1], ["TEXTO", 2], ["TERRENO", 6], ["ANOTACAO", 5], ["MOBILIARIO", 8], ["FORMAS", 30]];
   const g = (...kv) => { for (let i = 0; i < kv.length; i += 2) out.push(String(kv[i]), String(kv[i + 1])); };
   g(0, "SECTION", 2, "HEADER", 9, "$ACADVER", 1, "AC1009", 9, "$DWGCODEPAGE", 3, "ANSI_1252", 9, "$INSUNITS", 70, 6, 0, "ENDSEC");
   g(0, "SECTION", 2, "TABLES", 0, "TABLE", 2, "LTYPE", 70, 1, 0, "LTYPE", 2, "CONTINUOUS", 70, 0, 3, "Solid line", 72, 65, 73, 0, 40, "0.0", 0, "ENDTAB");
@@ -1304,6 +1321,11 @@ function buildDxf() {
   if (L_("text")) for (const t of S.texts) { text("TEXTO", t, 0.22, t.s); const a = areaOf(t); if (a) text("TEXTO", { x: t.x, y: t.y + 0.32 }, 0.15, fmt(a) + " m2"); }
   if (S.lot && L_("lot")) S.lot.pts.forEach((_, i) => { const [a, b] = lotSide(i); line("TERRENO", a, b); const { u, n } = lotOutward(i); let ang = Math.atan2(u.y, u.x); if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI; else if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI; text("TERRENO", add(mul(add(a, b), .5), mul(n, 0.35)), 0.2, fmt(dist(a, b)), -ang * 180 / Math.PI); });
   if (L_("blk")) for (const b of S.blocks || []) for (const pl of blkPolys(b)) for (let i = 1; i < pl.length; i++) line("MOBILIARIO", pl[i - 1], pl[i]);
+  for (const sh of S.shapes || []) {
+    if (sh.t === "circle") { g(0, "CIRCLE", 8, "FORMAS", 10, X(sh.c), 20, Y(sh.c), 30, 0, 40, f(sh.r)); if (L_("shp")) text("FORMAS", sh.c, 0.12, "D " + fmt(sh.r * 2)); continue; }
+    const vs = shpVerts(sh), closed = sh.t !== "line"; for (let i = 0; i < vs.length - (closed ? 0 : 1); i++) line("FORMAS", vs[i], vs[(i + 1) % vs.length]);
+    if (L_("shp")) { const pl = shpPolyOf(sh); if (pl) text("FORMAS", centroidOf(pl), 0.12, (sh.t === "rect" ? fmt(Math.abs(sh.b.x - sh.a.x)) + "x" + fmt(Math.abs(sh.b.y - sh.a.y)) + " " : "") + fmt(Math.abs(polyArea(pl))) + " m2"); else text("FORMAS", centroidOf(vs), 0.12, fmt(dist(sh.a, sh.b))); }
+  }
   if (L_("ink")) for (const k of S.inks) for (let i = 1; i < k.pts.length; i++) line("ANOTACAO", { x: k.pts[i - 1][0], y: k.pts[i - 1][1] }, { x: k.pts[i][0], y: k.pts[i][1] });
   g(0, "ENDSEC", 0, "EOF");
   return out.join("\r\n") + "\r\n";
@@ -1317,6 +1339,7 @@ function buildRevit() {
     paredes: S.walls.map(w => ({ id: w.id, inicio: P(w.a), fim: P(w.b), espessura: TH(w), comprimento: Math.round(dist(w.a, w.b) * 1000) / 1000 })),
     portas: S.openings.filter(o => o.kind === "door").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, altura: openH(o), distanciaDoInicio: Math.round(gm.c * 1000) / 1000, dobradica: P(gm.hinge), abrePara: P(add(gm.hinge, gm.side)) }; }).filter(Boolean),
     janelas: S.openings.filter(o => o.kind === "window").map(o => { const gm = openGeom(o); return gm && { parede: o.wall, centro: P(add(gm.w.a, mul(gm.u, gm.c))), largura: gm.ow, altura: openH(o), peitoril: openPs(o), distanciaDoInicio: Math.round(gm.c * 1000) / 1000 }; }).filter(Boolean),
+    formas: (S.shapes || []).map(sh => sh.t === "circle" ? { tipo: "circulo", centro: P(sh.c), raio: sh.r, tracejada: !!sh.dash } : { tipo: { line: "linha", rect: "retangulo", poly: "poligono" }[sh.t], pontos: shpVerts(sh).map(P), tracejada: !!sh.dash }),
     mobiliario: (S.blocks || []).map(b => ({ tipo: BLOCKS[b.type] ? BLOCKS[b.type].nm : b.type, centro: P(b), rotacao: -(b.rot || 0), largura: BLOCKS[b.type] && BLOCKS[b.type].w, profundidade: BLOCKS[b.type] && BLOCKS[b.type].d, espelhado: !!b.flip })),
     ambientes: S.texts.map(t => ({ nome: t.s, ponto: P(t), area: Math.round(areaOf(t) * 100) / 100 })),
     terreno: S.lot ? S.lot.pts.map(P) : null,
@@ -1353,6 +1376,7 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
   drawBlocks();
+  drawShapes();
   drawOpenings();
   drawInks();
   for (const w of S.walls) if (showDim(w)) drawDim(w, c, (sel && sel.type === "wall" && sel.id === w.id) || (tool === "pick" && multi.has(w.id)));
@@ -1947,7 +1971,7 @@ cv.addEventListener("pointerdown", ev => {
   }
   if (ptrs.size > 2) return;
   if (ev.pointerType === "pen" && !penMode) { penMode = true; toast("Caneta detectada: a caneta desenha, o dedo só move e dá zoom."); }
-  const fingerOnly = penMode && ev.pointerType === "touch" && (tool === "draw" || tool === "erase" || tool === "ink" || tool === "measure");
+  const fingerOnly = penMode && ev.pointerType === "touch" && (tool === "draw" || tool === "erase" || tool === "ink" || tool === "measure" || tool === "shape");
   if (ev.button === 1 || ev.button === 2 || tool === "pan" || fingerOnly) { drag = { mode: "pan", last: p }; return; }
   if (tool === "draw" && opt.rect) { const a = magnetFree(toW(p), 16 / view.k); drag = { mode: "rect", a, b: a }; }
   else if (tool === "draw") { rawStroke = [p]; drag = { mode: "draw" }; }
@@ -1955,6 +1979,7 @@ cv.addEventListener("pointerdown", ev => {
   else if (tool === "erase") { drag = { mode: "erase", did: false }; eraseAt(p); }
   else if (tool === "text") { drag = { mode: "textTap", start: p }; }
   else if (tool === "fillet") { drag = { mode: "filTap", start: p }; }
+  else if (tool === "shape") { drag = shpDown(p); }
   else if (tool === "block") { const b = hitBlock(p); drag = b ? { mode: "blkDrag", b, start: p, moved: false } : { mode: "blkTap", start: p }; }
   else if (tool === "measure") { msr.hover = snapAt(p); drag = { mode: "msr" }; draw(); }
   else if (tool === "pick") {
@@ -1989,6 +2014,7 @@ cv.addEventListener("pointermove", ev => {
   if (!ptrs.has(ev.pointerId)) {
     if (tool === "erase" && ev.pointerType === "mouse") { eraseTrail = p; draw(); }
     else if (tool === "measure" && ev.pointerType !== "touch" && !(msr.a && msr.b)) { msr.hover = snapAt(p); draw(); }
+    else if (tool === "shape" && ev.pointerType !== "touch") shpHover(p);
     return;
   }
   ptrs.set(ev.pointerId, p);
@@ -2019,6 +2045,7 @@ cv.addEventListener("pointermove", ev => {
   if (drag.mode === "erase") { eraseTrail = p; eraseAt(p); return; }
   if (drag.mode === "rect") { drag.b = magnetFree(toW(p), 16 / view.k); const P = rectPts(drag.a, drag.b); live = [...P, P[0]]; draw(); return; }
   if (drag.mode === "msr") { msr.hover = snapAt(p); draw(); return; }
+  if (drag.mode === "shp") { shpMove(drag, p); return; }
   if (drag.mode === "blkDrag") { if (!drag.moved && dist(p, drag.start) < 6) return; if (!drag.moved) { snapshot(); drag.moved = true; drag.w = blkWallOf(drag.b); } const got = blkSnap(drag.b, toW(p), drag.w); if (got) drag.w = got; else drag.w = null; sel = { type: "block", id: drag.b.id }; draw(); return; }
   if (drag.mode === "pickBox") { if (dist(p, drag.start) > 6) { pickBox = { a: drag.start, b: p }; draw(); } return; }
   if (drag.mode === "pickTap" && dist(p, drag.start) > 8) {
@@ -2062,6 +2089,12 @@ cv.addEventListener("pointermove", ev => {
       let ax = null, ay = null, dx = tol, dy = tol;
       for (const q of others) { if (Math.abs(q.x - w.x) < dx) { dx = Math.abs(q.x - w.x); ax = q.x; } if (Math.abs(q.y - w.y) < dy) { dy = Math.abs(q.y - w.y); ay = q.y; } }
       w = { x: ax ?? (opt.round ? r5(w.x) : w.x), y: ay ?? (opt.round ? r5(w.y) : w.y) };
+    }
+    if (opt.ortho && drag.w) {
+      const o = drag.refs.includes(drag.w.a) ? drag.w.b : drag.w.a, v = sub(w, o), L = len(v);
+      if (L > 1e-6) { const ang = Math.atan2(v.y, v.x), st = Math.PI / 4, sa = Math.round(ang / st) * st, dd = { x: Math.cos(sa), y: Math.sin(sa) };
+        const ok = Math.abs(v.x * dd.y - v.y * dd.x) < 0.01;
+        if (!ok) { let t = dot(v, dd); if (opt.round && !snapped) t = r5(t); w = add(o, mul(dd, t)); if (Math.abs(dd.x) < 1e-9) w.x = o.x; if (Math.abs(dd.y) < 1e-9) w.y = o.y; } }
     }
     for (const r of drag.refs) { r.x = clean(w.x); r.y = clean(w.y); }
     draw(); return;
@@ -2111,6 +2144,7 @@ function endPtr(ev) {
     const ws = P.map((q, i) => ({ id: nid(), a: { ...q }, b: { ...P[(i + 1) % 4] }, t: opt.thick }));
     S.walls.push(...ws); rectCtx = { ids: ws.map(w => w.id) }; after(); openRect();
   }
+  else if (d.mode === "shp") shpUp(d);
   else if (d.mode === "msr") { const h = snapAt(p); msrCommit(h); }
   else if (d.mode === "blkDrag") { if (d.moved) after(); sel = { type: "block", id: d.b.id }; showBlockSheet(); }
   else if (d.mode === "blkTap") {
@@ -2150,6 +2184,8 @@ $("zIn").onclick = () => zoomBy(1.3); $("zOut").onclick = () => zoomBy(1 / 1.3);
 function eraseAt(p) {
   const op = hitOpen(p);
   const ik = op ? null : hitInk(p);
+  const sh = op || ik ? null : hitShape(p, 8);
+  if (sh && !hitWall(p, 8)) { if (!drag.did) { snapshot(); drag.did = true; } S.shapes = S.shapes.filter(x => x !== sh); if (sel) closeSheets(); draw(); return; }
   const bk = op || ik ? null : hitBlock(p);
   if (bk && !hitWall(p, 8)) { if (!drag.did) { snapshot(); drag.did = true; } S.blocks = S.blocks.filter(x => x !== bk); if (sel) closeSheets(); draw(); return; }
   const dm = op || ik ? null : hitDim(p);
@@ -2171,7 +2207,7 @@ function dropZero() { S.walls = S.walls.filter(w => dist(w.a, w.b) > 0.01); }
 /* ---------- painéis ---------- */
 function closeSheets() {
   nbClose();
-  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk"]) $(id).hidden = true;
+  for (const id of ["sheetWall", "sheetText", "sheetExport", "sheetNew", "sheetOpen", "sheetLot", "sheetAreas", "sheetPick", "sheetMeasure", "sheetMod", "sheetRect", "sheetLayers", "sheetBlock", "sheetProj", "sheetAsk", "sheetShape"]) $(id).hidden = true;
   sel = null; textCtx = null; draw();
 }
 document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheets));
@@ -2346,7 +2382,7 @@ $("textVal").addEventListener("keydown", e => { if (e.key === "Enter") textOk();
 $("textDel").onclick = () => { if (!textCtx || !textCtx.t) return; snapshot(); S.texts = S.texts.filter(x => x !== textCtx.t); closeSheets(); after(); };
 
 $("btnNew").onclick = () => { closeSheets(); $("sheetNew").hidden = false; };
-$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], sk: [], lot: null, title: "" }; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
+$("newYes").onclick = () => { snapshot(); S = { walls: [], texts: [], openings: [], inks: [], dims: [], blocks: [], shapes: [], sk: [], lot: null, title: "" }; shpPoly = null; if (window.__projUnlink) window.__projUnlink(); multi.clear(); msr = { a: null, b: null, hover: null }; closeSheets(); after(); toast("Croqui novo. Pode desenhar."); setTool("draw"); };
 $("btnExport").onclick = () => { closeSheets(); $("expTitle").value = S.title && S.title !== "Exemplo" ? S.title : ""; $("sheetExport").hidden = false; };
 $("expTitle").addEventListener("input", e => { S.title = e.target.value; save(); });
 
@@ -2355,12 +2391,13 @@ function setTool(t) {
   const msg = { draw: "Risque as paredes à vontade. As medidas você indica depois, em Medida.", select: "Toque numa parede para dar o tamanho ou a distância até as vizinhas. Arraste a parede para movê-la.", text: "Toque dentro do cômodo para escrever o nome. A área aparece sozinha.", erase: "Passe por cima do que quer apagar.", pan: "Arraste para mover. Use dois dedos ou a roda do mouse para zoom.", lot: "Terreno: desenhe o contorno ou toque em Terreno de novo para criar pelo retângulo. Toque num lado para dar a medida.", fillet: "Modificar: escolha Canto, Estender/cortar ou Quebrar no painel.", ink: "Pincel: escreva à mão livre. Perto de uma parede, P vira porta, J vira janela e o arco vira porta. Toque de novo em Pincel para trocar a cor.", door: "Toque numa parede para colocar a porta.", window: "Toque numa parede para colocar a janela.", block: "Móveis: escolha o bloco e toque na planta. Perto da parede ele encosta sozinho.", pick: "Toque nas paredes ou arraste uma janela para selecionar. Depois arraste para mover.", measure: "Medir: toque no primeiro ponto e depois no segundo. O ímã pega pontas, meios, faces e perpendicular." }[t];
   showHint(msg); eraseTrail = null; fil1 = null; lotSel = null; pickBox = null; msr = { a: null, b: null, hover: null }; if (t !== "pick") multi.clear(); closeSheets();
   if (t === "lot" && !S.lot) openLot(null);
-  ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet();
+  ext1 = null; if (t === "fillet") { setMod(opt.modMode); $("sheetMod").hidden = false; } if (t === "block") showBlockSheet(); if (t !== "shape") shpPoly = null; if (t === "shape") showShapeSheet();
   cv.style.cursor = t === "pan" ? "grab" : t === "erase" ? "cell" : t === "text" ? "text" : "crosshair";
 }
 document.querySelectorAll(".tool[data-tool]").forEach(b => b.addEventListener("click", () => {
   if (b.dataset.tool === "lot" && tool === "lot") { openLot(null); return; }
   if (b.dataset.tool === "draw" && tool === "draw") { opt.rect = !opt.rect; $("drawLab").textContent = opt.rect ? "Retângulo" : "Parede"; showHint(opt.rect ? "Retângulo: arraste de um canto ao canto oposto. Depois digite as medidas do cômodo." : "Parede: risque à vontade."); return; }
+  if (b.dataset.tool === "shape" && tool === "shape") { if ($("sheetShape").hidden) showShapeSheet(); else $("sheetShape").hidden = true; return; }
   if (b.dataset.tool === "block" && tool === "block") { if ($("sheetBlock").hidden) showBlockSheet(); else $("sheetBlock").hidden = true; return; }
   if (b.dataset.tool === "fillet" && tool === "fillet") { $("sheetMod").hidden = !$("sheetMod").hidden; return; }
   if (b.dataset.tool === "ink" && tool === "ink") { opt.inkColor = opt.inkColor === "w" ? "y" : "w"; b.style.color = opt.inkColor === "y" ? "var(--accent)" : ""; toast(opt.inkColor === "y" ? "Pincel amarelo" : "Pincel branco"); return; }
@@ -2388,8 +2425,9 @@ document.addEventListener("keydown", e => {
   else if ((e.ctrlKey || e.metaKey) && k === "a" && tool === "pick") { e.preventDefault(); $("pickAll").click(); }
   else if ((k === "delete" || k === "backspace") && tool === "pick" && multi.size) $("pickDel").click();
   else if ((k === "delete" || k === "backspace") && sel && sel.type === "block") $("blkDel").click();
+  else if ((k === "delete" || k === "backspace") && sel && sel.type === "shape") $("shpDel").click();
   else if ((k === "delete" || k === "backspace") && sel) { if (sel.type === "wall") $("wallDel").click(); else if (sel.type === "open") $("openDel").click(); else { snapshot(); S.texts = S.texts.filter(t => t.id !== sel.id); closeSheets(); after(); } }
-  else if (k === "l") { setTool("draw"); opt.rect = false; $("drawLab").textContent = "Parede"; } else if (k === "v") setTool("select"); else if (k === "t") setTool("text"); else if (k === "e") setTool("erase"); else if (k === "h") setTool("pan"); else if (k === "b") setTool("ink"); else if (k === "f") { setTool("fillet"); setMod("fillet"); } else if (k === "x") { setTool("fillet"); setMod("extend"); } else if (k === "q") { setTool("fillet"); setMod("split"); } else if (k === "r") { setTool("draw"); opt.rect = true; $("drawLab").textContent = "Retângulo"; showHint("Retângulo: arraste de um canto ao canto oposto."); } else if (k === "g") setTool("lot"); else if (k === "p") setTool("door"); else if (k === "j") setTool("window"); else if (k === "s") setTool("pick"); else if (k === "m") setTool("measure"); else if (k === "k") setTool("block");
+  else if (k === "l") { setTool("draw"); opt.rect = false; $("drawLab").textContent = "Parede"; } else if (k === "v") setTool("select"); else if (k === "t") setTool("text"); else if (k === "e") setTool("erase"); else if (k === "h") setTool("pan"); else if (k === "b") setTool("ink"); else if (k === "f") { setTool("fillet"); setMod("fillet"); } else if (k === "x") { setTool("fillet"); setMod("extend"); } else if (k === "q") { setTool("fillet"); setMod("split"); } else if (k === "r") { setTool("draw"); opt.rect = true; $("drawLab").textContent = "Retângulo"; showHint("Retângulo: arraste de um canto ao canto oposto."); } else if (k === "g") setTool("lot"); else if (k === "p") setTool("door"); else if (k === "j") setTool("window"); else if (k === "s") setTool("pick"); else if (k === "m") setTool("measure"); else if (k === "k") setTool("block"); else if (k === "o") setTool("shape"); else if (k === "enter" && tool === "shape" && shpPoly) shpPolyDone();
 });
 
 /* ---------- enquadrar ---------- */
@@ -2399,6 +2437,7 @@ function bounds() {
   if (S.lot) for (const q of S.lot.pts) { minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y); }
   for (const k of S.inks) for (const q of k.pts) { minx = Math.min(minx, q[0]); maxx = Math.max(maxx, q[0]); miny = Math.min(miny, q[1]); maxy = Math.max(maxy, q[1]); }
   for (const b of S.blocks || []) for (const pl of blkPolys(b)) for (const q of pl) { minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y); }
+  for (const sh of S.shapes || []) { const r = sh.t === "circle" ? sh.r : 0; for (const q of shpVerts(sh)) { minx = Math.min(minx, q.x - r); maxx = Math.max(maxx, q.x + r); miny = Math.min(miny, q.y - r); maxy = Math.max(maxy, q.y + r); } }
   for (const t of S.texts) { minx = Math.min(minx, t.x); maxx = Math.max(maxx, t.x); miny = Math.min(miny, t.y); maxy = Math.max(maxy, t.y); }
   if (minx > maxx) return null; return { minx, miny, maxx, maxy };
 }
@@ -2445,6 +2484,7 @@ function cleanProj(o) {
             dims: (Array.isArray(o.dims) ? o.dims : []).filter(d => d && d.a && d.b && isFinite(d.a.x) && isFinite(d.b.x)).slice(0, 2000).map(d => ({ id: nid(), a: { x: +d.a.x, y: +d.a.y }, b: { x: +d.b.x, y: +d.b.y } })),
             blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(k => k && BLOCKS[k.type] && isFinite(k.x) && isFinite(k.y)).slice(0, 3000).map(k => ({ id: nid(), type: k.type, x: +k.x, y: +k.y, rot: ((+k.rot || 0) % 360 + 360) % 360, ...(k.flip ? { flip: true } : {}) })),
             texts: (o.texts || []).filter(t => t && typeof t.s === "string").map(t => ({ id: nid(), x: +t.x, y: +t.y, s: t.s.slice(0, 80) })),
+            shapes: shpClean(o.shapes),
             sk: skClean(o.sk) };
 }
 $("fileOpen").onchange = e => {
@@ -2561,6 +2601,19 @@ $("expPdf").onclick = () => {
   if (L_("dims")) for (const d of S.dims || []) { const { L, n, ang } = dimNormal(d.a, d.b); pdfDim(d.a, d.b, n, 0, fmt(L), ang, false, false); }
   doc.setFontSize(7);
   // móveis e louças
+  { doc.setDrawColor(20, 48, 107); doc.setLineWidth(0.22);
+    for (const sh of S.shapes || []) {
+      if (sh.dash && doc.setLineDashPattern) doc.setLineDashPattern([1.6, 1], 0);
+      if (sh.t === "circle") { const c = P(sh.c); doc.circle(c.x, c.y, sh.r * mm, "S"); }
+      else { const vs = shpVerts(sh).map(P), closed = sh.t !== "line"; for (let i = 0; i < vs.length - (closed ? 0 : 1); i++) { const a = vs[i], b = vs[(i + 1) % vs.length]; doc.line(a.x, a.y, b.x, b.y); } }
+      if (doc.setLineDashPattern) doc.setLineDashPattern([], 0);
+      if (L_("shp")) { doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(20, 48, 107);
+        const pl = shpPolyOf(sh); let lbl, at;
+        if (sh.t === "circle") { lbl = "Ø " + fmt(sh.r * 2) + " · " + fmt(Math.PI * sh.r * sh.r) + " m²"; at = P(sh.c); }
+        else if (pl) { lbl = (sh.t === "rect" ? fmt(Math.abs(sh.b.x - sh.a.x)) + " x " + fmt(Math.abs(sh.b.y - sh.a.y)) + " · " : "") + fmt(Math.abs(polyArea(pl))) + " m²"; at = P(centroidOf(pl)); }
+        else { lbl = fmt(dist(sh.a, sh.b)); const m = P({ x: (sh.a.x + sh.b.x) / 2, y: (sh.a.y + sh.b.y) / 2 }); at = { x: m.x, y: m.y - 1.2 }; }
+        doc.text(lbl, at.x, at.y + 0.8, { align: "center" }); }
+    } }
   if (L_("blk")) { doc.setDrawColor(90, 111, 153); doc.setLineWidth(0.12); for (const b of S.blocks || []) for (const pl of blkPolys(b)) { const q = pl.map(P); for (let i = 1; i < q.length; i++) doc.line(q[i - 1].x, q[i - 1].y, q[i].x, q[i].y); } doc.setDrawColor(20, 48, 107); }
   // pincel
   doc.setLineCap("round"); doc.setLineJoin("round"); doc.setLineWidth(Math.max(0.2, INK_W * mm));
@@ -2630,6 +2683,164 @@ $("expPdf").onclick = () => {
   $("expMsg").textContent = (nsk ? "PDF com a planta e " + nsk + (nsk > 1 ? " folhas" : " folha") + " de rascunho. Planta" : "PDF") + " na escala 1:" + pick.s + ", folha " + pick.nm.toUpperCase() + (pick.land ? " deitada." : " em pé.") + " Ao imprimir, escolha \"Tamanho real\" (100%).";
   offer(fileBase() + ".pdf", out);
 };
+
+/* ---------- formas geométricas (linha, retângulo, círculo, polígono) ---------- */
+// S.shapes: {id, t:"line"|"rect"|"circle"|"poly", a,b (line/rect) | c,r (circle) | pts (poly), dash?}
+let shpLive = null, shpPoly = null; // forma sendo desenhada; polígono em andamento
+const SHP_NM = { line: "Linha", rect: "Retângulo", circle: "Círculo", poly: "Polígono" };
+function shpClean(a) {
+  const P = q => q && isFinite(q.x) && isFinite(q.y) ? { x: +q.x, y: +q.y } : null;
+  return (Array.isArray(a) ? a : []).slice(0, 3000).map(s => {
+    if (!s || !SHP_NM[s.t]) return null; const o = { id: nid(), t: s.t, ...(s.dash ? { dash: true } : {}) };
+    if (s.t === "circle") { o.c = P(s.c); o.r = Math.max(0.01, Math.min(500, +s.r || 0)); return o.c ? o : null; }
+    if (s.t === "poly") { o.pts = (Array.isArray(s.pts) ? s.pts : []).map(P).filter(Boolean).slice(0, 200); return o.pts.length >= 3 ? o : null; }
+    o.a = P(s.a); o.b = P(s.b); return o.a && o.b ? o : null;
+  }).filter(Boolean);
+}
+const shpVerts = s => s.t === "line" ? [s.a, s.b] : s.t === "rect" ? [s.a, { x: s.b.x, y: s.a.y }, s.b, { x: s.a.x, y: s.b.y }] : s.t === "poly" ? s.pts : [s.c];
+const shpPolyOf = s => s.t === "rect" ? shpVerts(s) : s.t === "poly" ? s.pts : null;
+function shpSnap(w, extra) { // gruda em ponta de forma, depois nas paredes e no 5 cm
+  const tol = 16 / view.k; let best = null, bd = tol;
+  for (const s of S.shapes || []) for (const q of shpVerts(s)) { const d = dist(w, q); if (d < bd) { bd = d; best = q; } }
+  for (const q of extra || []) { const d = dist(w, q); if (d < bd) { bd = d; best = q; } }
+  return best ? { x: best.x, y: best.y } : magnetFree(w, tol);
+}
+function shpOrtho(a, b) {
+  if (!opt.ortho) return b; const v = sub(b, a), L = len(v); if (L < 1e-6) return b;
+  const ang = Math.atan2(v.y, v.x), st = Math.PI / 4, s = Math.round(ang / st) * st; if (Math.abs(ang - s) > 0.14) return b;
+  let LL = opt.round ? r5(L) : L; return { x: clean(a.x + Math.cos(s) * LL), y: clean(a.y + Math.sin(s) * LL) };
+}
+function shpMake(t, a, b) {
+  if (t === "line") return { t, a: { ...a }, b: shpOrtho(a, b) };
+  if (t === "rect") { let w = b.x - a.x, h = b.y - a.y; if (opt.round) { w = r5(w); h = r5(h); } return { t, a: { ...a }, b: { x: clean(a.x + w), y: clean(a.y + h) } }; }
+  if (t === "circle") { let r = dist(a, b); if (opt.round) r = r5(r); return { t, c: { ...a }, r: Math.max(0.05, clean(r)) }; }
+  return null;
+}
+function shpNorm(s) { if (s.t === "rect") { const a = { x: Math.min(s.a.x, s.b.x), y: Math.min(s.a.y, s.b.y) }, b = { x: Math.max(s.a.x, s.b.x), y: Math.max(s.a.y, s.b.y) }; s.a = a; s.b = b; } return s; }
+function shpDistPx(sp, s) {
+  if (s.t === "circle") { const c = toS(s.c); return Math.abs(dist(sp, c) - s.r * view.k); }
+  const vs = shpVerts(s).map(toS), closed = s.t !== "line"; let m = 1e9;
+  for (let i = 0; i < vs.length - (closed ? 0 : 1); i++) m = Math.min(m, segDist(sp, vs[i], vs[(i + 1) % vs.length]).d);
+  return m;
+}
+function hitShape(sp, tol = 10) { let best = null, bd = tol; for (const s of S.shapes || []) { const d = shpDistPx(sp, s); if (d < bd) { bd = d; best = s; } } return best; }
+const curShape = () => sel && sel.type === "shape" ? (S.shapes || []).find(s => s.id === sel.id) : null;
+function shpLabel(txt, p, ang, col) {
+  ctx.save(); ctx.translate(p.x, p.y); if (ang) { let a = ang; if (a > Math.PI / 2 + 1e-6) a -= Math.PI; else if (a <= -Math.PI / 2 + 1e-6) a += Math.PI; ctx.rotate(a); }
+  ctx.font = "500 10.5px 'IBM Plex Mono', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = col; ctx.fillText(txt, 0, 0); ctx.restore();
+}
+function shpDrawOne(s, isSel, live) {
+  const col = isSel || live ? COL.acc : COL.wall;
+  ctx.strokeStyle = col; ctx.lineWidth = isSel ? 2 : 1.5; ctx.setLineDash(s.dash ? [8, 5] : []);
+  ctx.beginPath();
+  if (s.t === "circle") { const c = toS(s.c); ctx.arc(c.x, c.y, s.r * view.k, 0, Math.PI * 2); }
+  else { const vs = shpVerts(s).map(toS); vs.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (s.t !== "line" && !live) ctx.closePath(); else if (s.t === "rect") ctx.closePath(); }
+  ctx.stroke(); ctx.setLineDash([]);
+  if (!L_("shp") && !live) return;
+  const lc = live || isSel ? COL.acc : COL.dim;
+  if (s.t === "line") { const a = toS(s.a), b = toS(s.b), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, ang = Math.atan2(b.y - a.y, b.x - a.x); if (dist(a, b) > 30) shpLabel(fmt(dist(s.a, s.b)), { x: m.x - Math.sin(ang) * 9 * (Math.cos(ang) < 0 ? -1 : 1), y: m.y + Math.cos(ang) * -9 * (Math.cos(ang) < 0 ? -1 : 1) }, ang, lc); }
+  else if (s.t === "rect") { const w = Math.abs(s.b.x - s.a.x), h = Math.abs(s.b.y - s.a.y), a = toS(s.a), b = toS(s.b); if (Math.abs(b.x - a.x) > 40 && Math.abs(b.y - a.y) > 24) { const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; shpLabel(fmt(w) + " x " + fmt(h), { x: m.x, y: m.y - 7 }, 0, lc); shpLabel(fmt(w * h) + " m²", { x: m.x, y: m.y + 7 }, 0, lc); } }
+  else if (s.t === "circle") { const c = toS(s.c); if (s.r * view.k > 22) { shpLabel("Ø " + fmt(s.r * 2), { x: c.x, y: c.y - 7 }, 0, lc); shpLabel(fmt(Math.PI * s.r * s.r) + " m²", { x: c.x, y: c.y + 7 }, 0, lc); } }
+  else if (s.t === "poly" && !live) {
+    const vs = s.pts; for (let i = 0; i < vs.length; i++) { const a = toS(vs[i]), b = toS(vs[(i + 1) % vs.length]); if (dist(a, b) < 34) continue; const ang = Math.atan2(b.y - a.y, b.x - a.x), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, cen = toS(centroidOf(vs)), nx = -Math.sin(ang), ny = Math.cos(ang), sg = (cen.x - m.x) * nx + (cen.y - m.y) * ny > 0 ? 1 : -1; shpLabel(fmt(dist(vs[i], vs[(i + 1) % vs.length])), { x: m.x - nx * 9 * sg, y: m.y - ny * 9 * sg }, ang, lc); }
+    const cc = toS(centroidOf(vs)); shpLabel(fmt(Math.abs(polyArea(vs))) + " m²", cc, 0, lc);
+  }
+}
+function centroidOf(vs) { let x = 0, y = 0; for (const q of vs) { x += q.x; y += q.y; } return { x: x / vs.length, y: y / vs.length }; }
+function drawShapes() {
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const s of S.shapes || []) shpDrawOne(s, !!(sel && sel.type === "shape" && sel.id === s.id), false);
+  if (shpLive) shpDrawOne(shpLive, false, true);
+  if (shpPoly) {
+    const vs = shpPoly.pts.map(toS); ctx.strokeStyle = COL.acc; ctx.lineWidth = 1.6; ctx.beginPath(); vs.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y));
+    if (shpPoly.hover) { const h = toS(shpPoly.hover); ctx.lineTo(h.x, h.y); } ctx.stroke();
+    ctx.fillStyle = COL.acc; for (const q of vs) { ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, Math.PI * 2); ctx.fill(); }
+    if (vs.length >= 3) { ctx.beginPath(); ctx.arc(vs[0].x, vs[0].y, 9, 0, Math.PI * 2); ctx.stroke(); }
+    if (shpPoly.hover && shpPoly.pts.length) { const a = shpPoly.pts[shpPoly.pts.length - 1], b = shpPoly.hover, A = toS(a), B = toS(b); if (dist(A, B) > 30) shpLabel(fmt(dist(a, b)), { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 - 10 }, 0, COL.acc); }
+  }
+  ctx.lineCap = "square"; ctx.lineJoin = "miter";
+}
+function shpPolyDone() {
+  if (!shpPoly) return; const pts = shpPoly.pts; shpPoly = null;
+  if (pts.length >= 3) { snapshot(); const s = { id: nid(), t: "poly", pts, ...(opt.shpDash ? { dash: true } : {}) }; S.shapes.push(s); sel = { type: "shape", id: s.id }; after(); toast("Polígono de " + fmt(Math.abs(polyArea(pts))) + " m²"); }
+  else draw();
+  showShapeSheet();
+}
+function shpDown(p) {
+  const w = toW(p);
+  if (opt.shape === "poly" && shpPoly) {
+    const first = shpPoly.pts[0];
+    if (shpPoly.pts.length >= 3 && dist(toS(first), p) < 14) { shpPolyDone(); return { mode: "shp", kind: "none" }; }
+    const last = shpPoly.pts[shpPoly.pts.length - 1], q = shpPolyPt(w, last);
+    if (dist(q, last) <= 0.02) return { mode: "shp", kind: "none" };
+    shpPoly.pts.push(q); shpPoly.hover = null; draw(); showShapeSheet(); return { mode: "shp", kind: "polyPt", idx: shpPoly.pts.length - 1 };
+  }
+  const hs = hitShape(p);
+  if (hs) { sel = { type: "shape", id: hs.id }; draw(); return { mode: "shp", kind: "move", s: hs, start: w, orig: JSON.parse(JSON.stringify(hs)), moved: false, sp: p }; }
+  if (sel && sel.type === "shape") { sel = null; }
+  const a = shpSnap(w);
+  if (opt.shape === "poly") { shpPoly = { pts: [a], hover: null }; draw(); showShapeSheet(); return { mode: "shp", kind: "polyPt", idx: 0 }; }
+  return { mode: "shp", kind: "new", a, sp: p };
+}
+function shpMove(d, p) {
+  const w = toW(p);
+  if (d.kind === "new") { if (dist(p, d.sp) < 6 && !shpLive) return; const b = opt.shape === "circle" ? w : shpSnap(w, []); shpLive = shpMake(opt.shape, d.a, b); draw(); return; }
+  if (d.kind === "polyPt") { if (!shpPoly || !shpPoly.pts[d.idx]) return; shpPoly.pts[d.idx] = d.idx ? shpPolyPt(w, shpPoly.pts[d.idx - 1]) : shpSnap(w); draw(); return; }
+  if (d.kind === "move") {
+    if (!d.moved && dist(p, d.sp) < 6) return; if (!d.moved) { snapshot(); d.moved = true; }
+    let dx = w.x - d.start.x, dy = w.y - d.start.y; if (opt.round) { dx = r5(dx); dy = r5(dy); }
+    const o = d.orig, mv = q => ({ x: clean(q.x + dx), y: clean(q.y + dy) }), s = d.s;
+    if (s.t === "circle") s.c = mv(o.c); else if (s.t === "poly") s.pts = o.pts.map(mv); else { s.a = mv(o.a); s.b = mv(o.b); }
+    draw(); return;
+  }
+}
+function shpPolyPt(w, last) { // ímã em ponta/parede vence; ponto solto respeita 0/45/90°
+  const q = shpSnap(w), free = opt.round ? { x: clean(r5(w.x)), y: clean(r5(w.y)) } : w;
+  return (q.x === free.x && q.y === free.y) ? shpOrtho(last, q) : q;
+}
+function shpHover(p) { if (tool === "shape" && shpPoly && shpPoly.pts.length) { shpPoly.hover = shpPolyPt(toW(p), shpPoly.pts[shpPoly.pts.length - 1]); draw(); } }
+function shpUp(d) {
+  if (d.kind === "new") {
+    const s = shpLive; shpLive = null;
+    if (!s || (s.t === "circle" ? s.r < 0.05 : dist(s.a, s.b) < 0.05)) { draw(); showShapeSheet(); return; }
+    shpNorm(s); s.id = nid(); if (opt.shpDash) s.dash = true; snapshot(); S.shapes.push(s); sel = { type: "shape", id: s.id }; after(); showShapeSheet(); return;
+  }
+  if (d.kind === "move") { if (d.moved) after(); sel = { type: "shape", id: d.s.id }; showShapeSheet(); }
+}
+function showShapeSheet() {
+  $("sheetShape").hidden = false;
+  document.querySelectorAll("[data-shp]").forEach(b => b.classList.toggle("on", b.dataset.shp === opt.shape));
+  $("shpDash").classList.toggle("on", !!opt.shpDash);
+  $("shpDone").hidden = !shpPoly; $("shpDone").disabled = !(shpPoly && shpPoly.pts.length >= 3);
+  const s = curShape(); $("shpEdit").hidden = !s;
+  const help = { line: "Arraste de uma ponta à outra. Prende em 0°, 45° e 90°.", rect: "Arraste de um canto ao canto oposto.", circle: "Toque no centro e arraste até a borda.", poly: "Toque ponto a ponto. Para fechar, toque no primeiro ponto ou em Concluir." };
+  $("shpHelp").textContent = shpPoly ? "Polígono com " + shpPoly.pts.length + " ponto(s). " + help.poly : help[opt.shape] + " Toque numa forma para medir, mover ou apagar.";
+  if (!s) { $("shpTitle").textContent = "Formas geométricas"; return; }
+  $("shpTitle").textContent = SHP_NM[s.t];
+  const show = (id, on) => { $(id).hidden = !on; };
+  show("shpRowW", s.t === "rect"); show("shpRowH", s.t === "rect"); show("shpRowL", s.t === "line"); show("shpRowD", s.t === "circle");
+  if (s.t === "rect") { $("shpW").value = fmt(Math.abs(s.b.x - s.a.x)); $("shpH").value = fmt(Math.abs(s.b.y - s.a.y)); }
+  if (s.t === "line") $("shpL").value = fmt(dist(s.a, s.b));
+  if (s.t === "circle") $("shpD").value = fmt(s.r * 2);
+  $("shpApply").hidden = s.t === "poly";
+  const poly = shpPolyOf(s), A = s.t === "circle" ? Math.PI * s.r * s.r : poly ? Math.abs(polyArea(poly)) : 0, P = s.t === "circle" ? 2 * Math.PI * s.r : poly ? polyPerim(poly) : dist(s.a, s.b);
+  $("shpInfo").textContent = s.t === "line" ? "Comprimento " + fmt(P) + " m" : "Área " + fmt(A) + " m² · perímetro " + fmt(P) + " m";
+  $("shpSelDash").classList.toggle("on", !!s.dash);
+}
+document.querySelectorAll("[data-shp]").forEach(b => b.onclick = () => { if (shpPoly && b.dataset.shp !== "poly") shpPolyDone(); opt.shape = b.dataset.shp; sel = null; draw(); showShapeSheet(); });
+$("shpDash").onclick = () => { opt.shpDash = !opt.shpDash; showShapeSheet(); toast(opt.shpDash ? "Formas novas tracejadas (projeção, beiral)" : "Formas novas com traço cheio"); };
+$("shpDone").onclick = () => shpPolyDone();
+$("shpSelDash").onclick = () => { const s = curShape(); if (!s) return; snapshot(); if (s.dash) delete s.dash; else s.dash = true; after(); showShapeSheet(); };
+$("shpDel").onclick = () => { const s = curShape(); if (!s) return; snapshot(); S.shapes = S.shapes.filter(x => x !== s); sel = null; after(); showShapeSheet(); toast(SHP_NM[s.t] + " apagado"); };
+$("shpApply").onclick = () => {
+  const s = curShape(); if (!s) return;
+  if (s.t === "rect") { const w = parseLen($("shpW").value), h = parseLen($("shpH").value); if (!(w > 0) || !(h > 0)) { toast("Digite largura e altura, ex.: 3,00"); return; } snapshot(); s.b = { x: clean(s.a.x + w), y: clean(s.a.y + h) }; }
+  else if (s.t === "line") { const L = parseLen($("shpL").value); if (!(L > 0)) { toast("Digite o comprimento, ex.: 2,50"); return; } const v = sub(s.b, s.a), l0 = len(v) || 1; snapshot(); s.b = { x: clean(s.a.x + v.x / l0 * L), y: clean(s.a.y + v.y / l0 * L) }; }
+  else if (s.t === "circle") { const D = parseLen($("shpD").value); if (!(D > 0)) { toast("Digite o diâmetro, ex.: 1,20"); return; } snapshot(); s.r = clean(D / 2); }
+  after(); showShapeSheet(); toast("Medida aplicada");
+};
+for (const id of ["shpW", "shpH", "shpL", "shpD"]) $(id).addEventListener("keydown", e => { if (e.key === "Enter") $("shpApply").click(); });
+opt.shape = "rect";
 
 /* ---------- rascunho (folhas de anotação à mão, junto do projeto) ---------- */
 let SKW = 1000, SKH = 707; // folha A4 (deitada ou em pé), em unidades da folha
@@ -2975,7 +3186,7 @@ if (window.claude && typeof window.claude.use === "function") {
 /* ---------- início ---------- */
 window.__cq = { get S() { return S; }, view, toS: p => toS(p), nb: () => nbHits.map(h => ({ x: h.x, y: h.y, g: h.c.gap })) };
 const saved = load();
-S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = [];
+S = saved || EXAMPLE(); if (!Array.isArray(S.sk)) S.sk = []; if (!Array.isArray(S.shapes)) S.shapes = [];
 if (!saved) { for (const b of S.blocks || []) if (b.type !== "mesa4") blkSnap(b, { x: b.x, y: b.y }); }
 if (!saved) setTimeout(() => toast("Este é um exemplo. Toque em Novo para começar o seu."), 600);
 new ResizeObserver(resize).observe(stage);
