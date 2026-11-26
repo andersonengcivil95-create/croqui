@@ -297,6 +297,11 @@ nav.tools{background:var(--chrome);border-top:1px solid var(--line);display:flex
         <button class="btn" data-mod="fillet" title="Une duas paredes num canto (F)">Canto</button>
         <button class="btn" data-mod="extend" title="Estende ou corta paredes até uma parede de referência (X)">Estender/cortar</button>
         <button class="btn" data-mod="split" title="Quebra a parede em duas no ponto tocado (Q)">Quebrar</button>
+        <button class="btn" data-mod="offset" title="Copia a parede ou forma paralela, a uma distância (como o OFFSET do CAD)">Offset</button>
+      </div>
+      <div class="row" id="modOffRow" hidden>
+        <label class="field num" style="max-width:160px"><input id="modOffD" inputmode="decimal" autocomplete="off" value="1,00" aria-label="Distância do offset"><span>m</span></label>
+        <button class="btn on" id="modOffFace" title="Distância livre entre as faces das paredes (vão) ou entre os eixos">Vão livre</button>
       </div>
       <p class="note" id="modNote"></p>
     </div>
@@ -564,8 +569,22 @@ function endpoints(extra) {
   return out;
 }
 
+/* Guias de alinhamento (como no Revit): a ponta da parede nova para no alinhamento de pontas
+   e eixos de paredes existentes; a linha tracejada mostra com qual ela alinhou */
+let liveGuides = [];
+function alignRefs(axis, v, tol, extra) { // axis "x": procura x parecido; devolve {val, ref}
+  let best = null, bd = tol;
+  const pts = endpoints(extra);
+  for (const q of pts) { const d = Math.abs(q[axis] - v); if (d < bd - 1e-9) { bd = d; best = { val: q[axis], ref: q }; } }
+  for (const w of S.walls) { // eixo de parede perpendicular ao eixo procurado (x de parede vertical)
+    if (axis === "x" ? Math.abs(w.a.x - w.b.x) > 1e-6 : Math.abs(w.a.y - w.b.y) > 1e-6) continue;
+    const d = Math.abs(w.a[axis] - v); if (d < bd - 1e-9) { bd = d; best = { val: w.a[axis], ref: w.a }; }
+  }
+  return best;
+}
 /* Transforma o traço à mão em paredes retas, com ímã nos pontos e no esquadro */
 function straighten(rawS) {
+  liveGuides = [];
   if (rawS.length < 2) return [];
   let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, plen = 0;
   for (let i = 0; i < rawS.length; i++) {
@@ -606,9 +625,8 @@ function straighten(rawS) {
         // 3) alinha com pontos existentes (esquadro) ou arredonda
         let aligned = false;
         if (d.y === 0 || d.x === 0) {
-          const axis = d.y === 0 ? "x" : "y"; let ad = tol, av = null;
-          for (const p of pool) { const dd = Math.abs(p[axis] - cand[axis]); if (dd < ad) { ad = dd; av = p[axis]; } }
-          if (av !== null) { cand = { ...cand, [axis]: av }; aligned = true; }
+          const axis = d.y === 0 ? "x" : "y", al = alignRefs(axis, cand[axis], tol, out.slice(0, -1));
+          if (al) { cand = { ...cand, [axis]: al.val }; aligned = true; if (i === vs.length - 1) liveGuides.push({ a: al.ref, b: { ...cand } }); }
         }
         if (!aligned && opt.round) cand = add(prev, mul(d, Math.max(0.05, r5(L))));
       }
@@ -1406,6 +1424,11 @@ function draw() {
     ctx.strokeStyle = COL.ink; ctx.lineWidth = 2; ctx.setLineDash([2, 5]);
     ctx.beginPath(); rawStroke.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); ctx.setLineDash([]);
   }
+  if (live && live.length > 1 && liveGuides.length) {
+    ctx.save(); ctx.strokeStyle = "rgba(255,207,74,.85)"; ctx.lineWidth = 1; ctx.setLineDash([6, 5]);
+    for (const g of liveGuides) { const a = toS(g.a), b = toS(g.b); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]); ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([6, 5]); }
+    ctx.restore();
+  }
   if (live && live.length > 1) {
     ctx.strokeStyle = COL.acc; ctx.lineWidth = wl;
     ctx.beginPath(); live.forEach((p, i) => { const s = toS(p); i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y); }); ctx.stroke();
@@ -1644,11 +1667,34 @@ function movePicked(dx, dy, copy) {
     multi.clear(); fresh.forEach(w => multi.add(w.id));
   } else {
     const rd = riders(pickBounds());
-    for (const r of pickRefs()) { r.pt.x = clean(r.o.x + dx); r.pt.y = clean(r.o.y + dy); }
+    pickApplyMove(pickMoveRefs(), dx, dy);
     for (const q of rd.texts.concat(rd.dims.flatMap(d => [d.a, d.b]))) { q.x = clean(q.x + dx); q.y = clean(q.y + dy); }
     dropZero();
   }
   after(); showPick();
+}
+// mover seleção estilo Revit: as paredes selecionadas andam inteiras; as vizinhas ligadas nelas
+// só esticam ou encurtam na própria direção (não mudam de ângulo nem de lugar)
+function pickMoveRefs() {
+  const ws = pickWalls(), selSet = new Set(ws), full = [], slide = [], seen = new Set();
+  for (const w of ws) for (const e of ["a", "b"]) if (!seen.has(w[e])) { seen.add(w[e]); full.push({ pt: w[e], o: { x: w[e].x, y: w[e].y } }); }
+  const orig = new Map(ws.map(w => [w, { a: { ...w.a }, b: { ...w.b } }]));
+  for (const x of S.walls) { if (selSet.has(x)) continue;
+    for (const e of ["a", "b"]) { const q = x[e]; if (seen.has(q)) continue;
+      const sw = ws.find(w => segDist(q, w.a, w.b).d < 1e-3); if (!sw) continue;
+      seen.add(q); const other = e === "a" ? x.b : x.a;
+      slide.push({ pt: q, o: { x: q.x, y: q.y }, fixed: { x: other.x, y: other.y }, sw: orig.get(sw) });
+    } }
+  return { full, slide };
+}
+function pickApplyMove(R, dx, dy) {
+  for (const r of R.full) { r.pt.x = clean(r.o.x + dx); r.pt.y = clean(r.o.y + dy); }
+  for (const r of R.slide) {
+    const L0 = { a: r.fixed, b: r.o }, mv = { a: { x: r.sw.a.x + dx, y: r.sw.a.y + dy }, b: { x: r.sw.b.x + dx, y: r.sw.b.y + dy } };
+    let q = lineX(L0, mv);
+    if (!q) { const u = sub(r.o, r.fixed), l = len(u) || 1, t = (dx * u.x + dy * u.y) / l; q = { x: clean(r.o.x + u.x / l * t), y: clean(r.o.y + u.y / l * t) }; } // vizinha em linha: estica junto
+    r.pt.x = q.x; r.pt.y = q.y;
+  }
 }
 function pickRefs() {
   // pontas das paredes selecionadas + pontas de outras paredes encostadas nelas (ficam ligadas, como o "stretch" do CAD)
@@ -1829,10 +1875,38 @@ function splitPick(sp) {
 function setMod(m) {
   opt.modMode = m; fil1 = null; ext1 = null; sel = null;
   document.querySelectorAll("[data-mod]").forEach(b => b.classList.toggle("on", b.dataset.mod === m));
-  $("modNote").textContent = { fillet: "Canto: toque em duas paredes. Elas se estendem ou cortam até formar o canto, mantendo o lado tocado.", extend: "Estender/cortar: toque primeiro na parede de referência e depois em cada parede que deve chegar até ela.", split: "Quebrar: toque na parede no ponto onde ela vira duas (arredonda a cada 5 cm)." }[m];
+  $("modNote").textContent = { fillet: "Canto: toque em duas paredes. Elas se estendem ou cortam até formar o canto, mantendo o lado tocado.", extend: "Estender/cortar: toque primeiro na parede de referência e depois em cada parede que deve chegar até ela.", split: "Quebrar: toque na parede no ponto onde ela vira duas (arredonda a cada 5 cm).", offset: "Offset: digite a distância, toque na parede (ou forma) e depois toque do lado onde a cópia vai. Repita quantas vezes quiser." }[m];
+  $("modOffRow").hidden = m !== "offset"; off1 = null;
   draw();
 }
-function modTap(sp) { if (opt.modMode === "extend") extendPick(sp); else if (opt.modMode === "split") splitPick(sp); else filletPick(sp); }
+function modTap(sp) { if (opt.modMode === "extend") extendPick(sp); else if (opt.modMode === "split") splitPick(sp); else if (opt.modMode === "offset") offsetPick(sp); else filletPick(sp); }
+// OFFSET (CAD): 1º toque escolhe a parede/forma, 2º toque escolhe o lado
+var off1 = null, offFace = true;
+function offsetPick(sp) {
+  const d = parseLen($("modOffD").value); if (!(d > 0)) { toast("Digite a distância do offset, ex.: 1,20"); $("modOffD").focus(); return; }
+  if (!off1) {
+    const w = hitWall(sp, 16), sh = w ? null : hitShape(sp, 12);
+    if (w) { off1 = { w }; sel = { type: "wall", id: w.id }; } else if (sh && sh.t !== "poly") { off1 = { sh }; sel = { type: "shape", id: sh.id }; }
+    else { toast(sh ? "Offset de polígono ainda não: use em parede, linha, retângulo ou círculo" : "Toque numa parede ou forma"); return; }
+    showHint("Agora toque do lado onde a cópia vai ficar."); draw(); return;
+  }
+  const p = toW(sp), o = off1; off1 = null; sel = null; snapshot();
+  if (o.w) {
+    const w = o.w, L = dist(w.a, w.b) || 1, u = mul(sub(w.b, w.a), 1 / L), n = { x: -u.y, y: u.x }, sg = dot(sub(p, w.a), n) >= 0 ? 1 : -1;
+    const k = d + (offFace ? TH(w) : 0), sh = mul(n, sg * k);
+    const c = { id: nid(), a: { x: clean(w.a.x + sh.x), y: clean(w.a.y + sh.y) }, b: { x: clean(w.b.x + sh.x), y: clean(w.b.y + sh.y) }, t: TH(w) };
+    S.walls.push(c); after(); toast("Parede copiada a " + fmt(d) + (offFace ? " (vão livre)" : " (entre eixos)"));
+  } else {
+    const s0 = o.sh, c = JSON.parse(JSON.stringify(s0)); c.id = nid();
+    if (s0.t === "circle") { const out = dist(p, s0.c) > s0.r; c.r = clean(Math.max(0.01, s0.r + (out ? d : -d))); if (!out && s0.r - d <= 0.01) { toast("O círculo é menor que essa distância"); hist.pop(); updUndo(); draw(); return; } }
+    else if (s0.t === "rect") { const inside = p.x > s0.a.x && p.x < s0.b.x && p.y > s0.a.y && p.y < s0.b.y, k = inside ? -d : d; c.a = { x: clean(s0.a.x - k), y: clean(s0.a.y - k) }; c.b = { x: clean(s0.b.x + k), y: clean(s0.b.y + k) }; if (c.b.x - c.a.x <= 0.01 || c.b.y - c.a.y <= 0.01) { toast("O retângulo é menor que essa distância"); hist.pop(); updUndo(); draw(); return; } }
+    else { const L = dist(s0.a, s0.b) || 1, u = mul(sub(s0.b, s0.a), 1 / L), n = { x: -u.y, y: u.x }, sg = dot(sub(p, s0.a), n) >= 0 ? 1 : -1, sh = mul(n, sg * d); c.a = { x: clean(s0.a.x + sh.x), y: clean(s0.a.y + sh.y) }; c.b = { x: clean(s0.b.x + sh.x), y: clean(s0.b.y + sh.y) }; }
+    S.shapes.push(c); after(); toast(SHP_NM[s0.t] + " copiado a " + fmt(d));
+  }
+  showHint("Offset: toque na próxima parede ou forma.");
+}
+$("modOffFace").onclick = e => { offFace = !offFace; e.currentTarget.classList.toggle("on", offFace); e.currentTarget.textContent = offFace ? "Vão livre" : "Entre eixos"; };
+$("modOffD").addEventListener("keydown", e => e.stopPropagation());
 
 /* ---------- retângulo de cômodo ---------- */
 function rectPts(a, b) { return [{ x: a.x, y: a.y }, { x: b.x, y: a.y }, { x: b.x, y: b.y }, { x: a.x, y: b.y }]; }
@@ -2043,23 +2117,29 @@ cv.addEventListener("pointermove", ev => {
     return;
   }
   if (drag.mode === "erase") { eraseTrail = p; eraseAt(p); return; }
-  if (drag.mode === "rect") { drag.b = magnetFree(toW(p), 16 / view.k); const P = rectPts(drag.a, drag.b); live = [...P, P[0]]; draw(); return; }
+  if (drag.mode === "rect") { drag.b = magnetFree(toW(p), 16 / view.k); liveGuides = [];
+    for (const ax of ["x", "y"]) { const al = alignRefs(ax, drag.b[ax], 14 / view.k, [drag.a]); if (al && al.ref !== drag.a && Math.abs(al.val - drag.a[ax]) > 0.05) { drag.b = { ...drag.b, [ax]: al.val }; liveGuides.push({ a: al.ref, b: null, ax }); } }
+    for (const g of liveGuides) g.b = { ...drag.b }; const P = rectPts(drag.a, drag.b); live = [...P, P[0]]; draw(); return; }
   if (drag.mode === "msr") { msr.hover = snapAt(p); draw(); return; }
   if (drag.mode === "shp") { shpMove(drag, p); return; }
   if (drag.mode === "blkDrag") { if (!drag.moved && dist(p, drag.start) < 6) return; if (!drag.moved) { snapshot(); drag.moved = true; drag.w = blkWallOf(drag.b); } const got = blkSnap(drag.b, toW(p), drag.w); if (got) drag.w = got; else drag.w = null; sel = { type: "block", id: drag.b.id }; draw(); return; }
   if (drag.mode === "pickBox") { if (dist(p, drag.start) > 6) { pickBox = { a: drag.start, b: p }; draw(); } return; }
   if (drag.mode === "pickTap" && dist(p, drag.start) > 8) {
-    snapshot(); const rd = riders(pickBounds()), refs = pickRefs();
-    for (const q of rd.texts.concat(rd.dims.flatMap(d => [d.a, d.b]))) refs.push({ pt: q, o: { x: q.x, y: q.y } });
+    snapshot(); const rd = riders(pickBounds()), refs = pickMoveRefs();
+    for (const q of rd.texts.concat(rd.dims.flatMap(d => [d.a, d.b]))) refs.full.push({ pt: q, o: { x: q.x, y: q.y } });
+    const w0 = pickWalls()[0]; if (w0) { const L = dist(w0.a, w0.b) || 1; refs.u = { x: (w0.b.x - w0.a.x) / L, y: (w0.b.y - w0.a.y) / L }; }
     drag = { mode: "pickMove", refs, startW: drag.startW };
     $("sheetPick").hidden = true;
   }
   if (drag.mode === "pickMove") {
     const wp = toW(p); let dx = wp.x - drag.startW.x, dy = wp.y - drag.startW.y;
-    if (opt.ortho) { const a = Math.abs(Math.atan2(dy, dx)) % (Math.PI / 2); if (a < 0.26) dy = 0; else if (a > Math.PI / 2 - 0.26) dx = 0; }
-    if (opt.round) { dx = r5(dx); dy = r5(dy); }
+    if (opt.ortho) { // trava: só para frente/trás ou de lado, na direção da parede
+      const u = drag.refs.u || { x: 1, y: 0 }, n = { x: -u.y, y: u.x }, a = dx * u.x + dy * u.y, b = dx * n.x + dy * n.y;
+      let k = Math.abs(a) >= Math.abs(b) ? a : b; const d = Math.abs(a) >= Math.abs(b) ? u : n; if (opt.round) k = r5(k);
+      dx = d.x * k; dy = d.y * k; if (Math.abs(dx) < 1e-9) dx = 0; if (Math.abs(dy) < 1e-9) dy = 0;
+    } else if (opt.round) { dx = r5(dx); dy = r5(dy); }
     drag.dx = dx; drag.dy = dy;
-    for (const r of drag.refs) { r.pt.x = clean(r.o.x + dx); r.pt.y = clean(r.o.y + dy); }
+    pickApplyMove(drag.refs, dx, dy);
     draw(); return;
   }
   if (drag.mode === "open") {
